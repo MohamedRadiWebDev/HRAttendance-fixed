@@ -1,0 +1,413 @@
+HR Attendance & Payroll System with Multiple Template Support
+
+1. Project Foundation & Dependencies
+
+Install required npm packages: xlsx (Excel processing), date-fns (date handling), zustand (state management)
+Configure Tailwind CSS for RTL support with custom directives
+Set up TypeScript strict mode configuration
+Create Arabic font imports and RTL layout utilities
+Establish folder structure: /shared (schemas, types), /lib (utilities), /components (UI), /features (business logic), /hooks (custom hooks), /stores (state management)
+2. Core Data Schema & Type Definitions
+
+Create shared/types.ts with all TypeScript interfaces:
+RawBiometricPunch (employee_code, punch_datetime)
+MasterEmployee (code, name_ar, department, section, hire_date, termination_date, shift_start)
+DailyAttendanceRow (employee, date, check_in, check_out, first_stamp, last_stamp, total_hours, penalties, overtime)
+AdjustmentRecord (missions, permissions, leaves with date ranges)
+SpecialRule (id, name, priority, scope, date_range, rule_type, params)
+ExcelTemplateSchema (id, name, columns with Arabic headers, column order, data types)
+AuditTraceEntry (calculation transparency data)
+Define enums for LeaveType, RuleType, PenaltyType, DayOfWeek
+Create validation schemas for import data
+3. Multi-Template Management System
+
+Create lib/templates/schema.ts:
+Define TemplateDefinition interface (id, name_ar, description, columns[])
+ColumnDefinition interface (excelColumn, headerArabic, headerEnglish, dataType, format, required)
+Support both "Attendance & Departure" and "Monthly Summary" template types
+Allow custom column mapping
+Build lib/templates/loader.ts:
+Load template definitions from uploaded Excel files
+Extract column headers and order from template sheet
+Infer data types from sample data
+Validate template completeness
+Create lib/templates/registry.ts:
+In-memory registry of available templates
+Template selection and switching logic
+Default template management
+Build lib/templates/validator.ts:
+Validate required columns exist in template
+Check for duplicate columns
+Warn about missing expected columns
+4. Excel Import/Export Infrastructure
+
+Build lib/excel/parser.ts for reading Excel files:
+Parse biometric punches with datetime normalization (Excel serial + text formats)
+Parse master data with Arabic text handling
+Parse adjustment files (missions, permissions, leaves)
+Parse template files to extract schema and column mappings
+Handle multiple sheet detection and validation
+Support variable column positions based on template
+Build lib/excel/exporter.ts for writing Excel files:
+Generate attendance sheet matching selected template schema
+Generate monthly summary matching selected template schema
+Write data in correct column order and position
+Apply data types (dates as dates, numbers as numbers, text as text)
+Preserve blank vs zero behavior per business rules
+Export special rules to Excel template
+Create lib/excel/validator.ts:
+Validate employee codes (unknown employees)
+Detect invalid datetime formats
+Find duplicate punches
+Check overlapping missions/permissions
+Validate date range logic (end before start)
+5. Date & Time Utilities
+
+Build lib/datetime/normalizer.ts:
+Convert Excel serial dates to YYYY-MM-DD
+Parse text datetime formats (16/12/2025 12:06 AM, etc.)
+Normalize all times to HH:mm:ss format
+Generate MovementCode (employee_code + date)
+Handle timezone-safe operations
+Create lib/datetime/calculator.ts:
+Calculate time differences in hours/minutes
+Determine shift boundaries (start, end, duration)
+Apply weekday-specific duration rules (Saturday special handling)
+Calculate overtime windows (early, late)
+Handle overnight scenarios (only when rule activates)
+6. Business Rules Engine with Overnight Stay Logic
+
+Create lib/rules/engine.ts with priority-based evaluation:
+Rule matching by scope (employee, department, branch, all)
+Date range and day-of-week filtering
+Priority resolution (highest priority wins)
+Rule type handlers: CUSTOM_SHIFT, ATTENDANCE_EXEMPT, PENALTY_OVERRIDE, IGNORE_BIOMETRIC, OVERTIME_OVERNIGHT
+OVERTIME_OVERNIGHT handler: enables overnight punch linking for specific employees/dates
+Return applied rules for audit trail
+Build lib/rules/validator.ts:
+Validate rule configuration (JSON params, date ranges)
+Check for conflicting rules
+Verify scope values exist
+Create lib/rules/types.ts with rule parameter interfaces
+Build lib/rules/overnightHandler.ts (only activates when OVERTIME_OVERNIGHT rule present):
+Link next day first punch to previous day checkout
+Calculate overtime from ShiftEnd (day1) to linked punch (day2)
+Enforce maxOvernightHours limit
+Prevent double counting across days
+Mark linked punches in audit trail
+7. Attendance Calculation Core Logic
+
+Build lib/attendance/processor.ts:
+Daily punch aggregation (min check-in, max check-out per employee per day)
+FirstStamp calculation (MIN of check-in, mission_start, permission_start)
+LastStamp calculation (MAX of check-out, mission_end, permission_end)
+TotalWorkingHours computation (LastStamp - FirstStamp)
+Shift determination (master data override or default 09:00-17:00)
+ShiftEnd calculation based on duration rules
+Check for overnight linking eligibility (if OVERTIME_OVERNIGHT rule active)
+Create lib/attendance/excuses.ts:
+Suppression logic checker (leaves, holidays, weekly rest, hire/termination periods)
+Special note handling (بدون حضور وانصراف flag)
+Excused status determination per day
+8. Penalty Calculation System
+
+Build lib/penalties/calculator.ts:
+Late Arrival (التأخيرات): 0-15=blank, 16-30=0.25, 31-60=0.5, 61+=1.0
+Early Leave (انصراف بدون اذن): >5min=0.5 else blank
+Missing Stamp (عدم بصمة): same check-in/out=0.5
+Absence (غياب بدون اذن): no working hours=1.0 (×2 in summary)
+Apply suppression before calculation
+Respect blank vs zero semantics
+Handle disciplinary penalties (manual input)
+Create lib/penalties/status.ts:
+Daily deduction status (يوجد جزاء if any penalty)
+Monthly status aggregation (يوجد خصم if any day penalized)
+9. Overtime Calculation System
+
+Build lib/overtime/calculator.ts:
+Early OT window (before shift start)
+Late OT window (after shift end)
+Day OT and Night OT separation (manual editable)
+Total OT aggregation
+OT to days conversion: MIN((hours × 24) / 8, 6)
+Create lib/overtime/overnight.ts:
+Only functions when OVERTIME_OVERNIGHT rule is active
+Triggered by rules engine
+Use overnight handler from rules module
+10. Search & Filtering System
+
+Build lib/search/normalizer.ts:
+Employee code normalization (trim, Arabic to Latin digits)
+Name normalization (remove tashkeel, unify أ/إ/آ to ا)
+Create searchable index per employee
+Create lib/search/filter.ts:
+Debounced search (200ms delay)
+Multi-field search (code, name, department, section, branch)
+Always filter from original dataset
+Case-insensitive matching
+11. State Management Architecture
+
+Create stores/attendanceStore.ts using zustand:
+Raw biometric data state
+Master employee data state
+Adjustment records state
+Special rules state
+Computed daily attendance state
+Monthly summary state
+Selected template schema state
+Import validation results
+Create stores/uiStore.ts:
+Current view/screen
+Selected date range
+Search query
+Filter settings
+Loading states
+Error messages
+Selected template ID
+Create stores/auditStore.ts:
+Calculation trace data per employee per day
+Applied rules log (including overnight linking activations)
+Data source attribution
+Create stores/templatesStore.ts:
+Available templates list
+Active template selection
+Template definitions cache
+12. Template Management UI
+
+Build features/templates/TemplateSelector.tsx:
+Dropdown to select active template
+Preview selected template columns
+Show template description
+Load new template option
+Create features/templates/TemplateLoader.tsx:
+Upload Excel file as template
+Extract column headers and map to data types
+Preview template structure
+Save as new template or update existing
+Confirm column mappings
+Build features/templates/TemplateManager.tsx:
+List all available templates
+Delete unused templates
+Set default template
+View template details
+Import/export template definitions
+13. File Upload & Import Management
+
+Build features/import/BiometricUpload.tsx:
+Drag-and-drop Excel file upload
+Preview first 100 rows
+Show validation errors
+Confirm/cancel import
+Create features/import/MasterDataUpload.tsx:
+Upload master data file
+Map columns if schema varies
+Validate employee data
+Show import summary
+Build features/import/AdjustmentUpload.tsx:
+Upload missions/permissions/leaves
+Display overlap warnings
+Allow conflict resolution
+Create features/import/ImportValidation.tsx:
+Display validation results after import
+Group errors by type
+Allow fixing errors before processing
+Show warnings vs critical errors
+14. Main User Interface Views
+
+Build features/dashboard/Dashboard.tsx:
+Period overview (selected month/date range)
+Key statistics cards (total employees, present, absent, late, early)
+Charts for attendance trends
+Quick action buttons
+Recent activity feed
+Template indicator showing active template
+Create features/attendance/DailyAttendanceGrid.tsx:
+Editable table with all daily attendance rows
+Color coding (violations=red, normal=green, missing=yellow)
+Inline editing for manual adjustments
+Column sorting and filtering
+Export filtered results
+Pagination for large datasets
+Build features/special-cases/SpecialCasesManager.tsx:
+List all special rules with priority
+Add/edit/delete rules
+Enable/disable toggle
+Import/export rules to Excel
+Preview affected employees and dates
+Mark OVERTIME_OVERNIGHT rules with icon/badge
+Create features/summary/MonthlySummary.tsx:
+One row per employee
+Total penalties, overtime, deductions
+Color-coded status indicators
+Export to Excel button
+Build features/audit/AuditTrail.tsx:
+Select employee and date
+Show all calculation steps
+Display raw punches used
+List adjustments applied
+Show special rules evaluated (including overnight linking if active)
+Display computed values with formulas
+Highlight "Needs Mapping" items
+15. Special Cases Rule Management
+
+Create features/special-cases/RuleEditor.tsx:
+Form for rule configuration
+Scope selector (employee/department/branch/all)
+Date range picker
+Days of week multi-select
+Rule type dropdown with parameter forms
+Priority slider
+Notes text area
+Special handling for OVERTIME_OVERNIGHT (show maxOvernightHours param)
+Build features/special-cases/RuleImportExport.tsx:
+Download Excel template for rules
+Upload bulk rules Excel file
+Preview and validate rules
+Show JSON parameter validation errors
+Batch import confirmation
+16. Excel Export Functionality
+
+Build features/export/AttendanceExport.tsx:
+Use selected template schema
+Generate attendance sheet matching template
+Preserve exact column order from template
+Apply correct data types (dates, numbers, text, blank)
+Write to xlsx with correct data types (not formatted strings)
+Trigger download
+Create features/export/SummaryExport.tsx:
+Use selected summary template schema
+Generate monthly summary Excel
+One row per employee with totals
+Include absence multiplier (×2)
+Match template format exactly
+Trigger download
+Build features/export/ExportSettings.tsx:
+Allow selection of which template to export to
+Show export preview
+Choose date range
+Filter by department/section if needed
+17. Arabic RTL UI Components
+
+Build components/ui/Layout.tsx:
+RTL container with dir="rtl"
+Arabic font families
+Proper text alignment
+Navigation sidebar (Arabic labels)
+Create components/ui/Table.tsx:
+RTL-aware table component
+Arabic headers
+Cell formatting for data types
+Sorting and filtering
+Responsive design
+Build components/ui/Form.tsx:
+RTL form inputs
+Arabic labels and placeholders
+Validation messages in Arabic
+Date/time pickers with Arabic calendar
+Create components/ui/Button.tsx, Card.tsx, Modal.tsx, Alert.tsx:
+All with RTL support and Arabic text
+Consistent styling
+Accessibility features
+18. Error Handling & Validation
+
+Create lib/errors/types.ts:
+Custom error classes (ImportError, ValidationError, CalculationError)
+Error codes and Arabic messages
+Build lib/validation/attendance.ts:
+Validate daily attendance calculations
+Check for logical inconsistencies
+Warn about edge cases
+Create features/validation/ImportValidation.tsx:
+Display validation results after import
+Group errors by type
+Allow fixing errors before processing
+Show warnings vs critical errors
+19. Performance Optimization
+
+Implement lib/performance/chunking.ts:
+Process large datasets in chunks (batch size 100)
+Show progress indicator
+Prevent UI blocking
+Create lib/performance/memoization.ts:
+Memoize expensive calculations
+Cache search results
+Optimize re-renders
+Use React.memo for heavy components
+Implement virtual scrolling for large tables (>1000 rows)
+20. Testing Infrastructure
+
+Create tests/rules/engine.test.ts:
+Test rule priority resolution
+Test scope matching
+Test date range filtering
+Test overnight linking activation (only when rule present)
+Build tests/penalties/calculator.test.ts:
+Test all penalty tiers
+Test suppression logic
+Test blank vs zero behavior
+Edge cases (midnight shifts, same punch times)
+Create tests/overnight/handler.test.ts:
+Test overnight stay linking only when rule active
+Test double counting prevention
+Test max hours enforcement
+Test punch linking across days
+Build tests/excel/roundtrip.test.ts:
+Import sample Excel with template, export, verify schema match
+Test multiple templates
+Test Arabic header preservation
+Test data type preservation
+21. Bolt Database Integration for Data Persistence
+
+Create lib/supabase/client.ts:
+Initialize Bolt Database client
+Optional persistence toggle in settings
+Build lib/supabase/schema.ts:
+Define Bolt Database tables: templates, special_rules, master_data, adjustments
+Do NOT persist raw biometric punches (remains in-memory only)
+Create lib/supabase/sync.ts:
+Save/load templates to database
+Save/load special rules to database
+Save/load master data to database
+Save/load adjustments to database
+Sync functions triggered on save actions
+Add features/settings/PersistenceSettings.tsx:
+Toggle persistence on/off
+Show sync status
+Manual sync button
+Cloud backup status
+Maintain full offline functionality as default
+22. Documentation & Sample Data
+
+Create README.md with:
+Local setup instructions (npm install, npm run dev)
+Architecture overview diagram
+Data flow documentation
+Business rules reference (Arabic/English)
+Multiple template format specifications
+Overnight stay rule configuration example
+Build docs/BUSINESS_RULES.md:
+Complete penalty calculation reference
+Shift logic explanation
+Suppression rules documentation
+Special cases examples
+Overnight stay rule detailed explanation
+Create docs/TEMPLATES.md:
+How to create custom templates
+Template schema specification
+Column mapping examples
+Multiple organizations setup guide
+Build sample-data/:
+Sample biometric punches Excel
+Sample master data Excel
+Sample adjustments Excel
+Sample template Excel (Attendance & Departure)
+Sample template Excel (Monthly Summary)
+Sample special rules Excel (including overnight stay example)
+Create docs/API.md:
+Function signatures for rules engine
+Template loading API
+Type definitions reference
+Usage examples
+Summary
+
+This revised plan creates a comprehensive, multi-tenant-ready HR Attendance & Payroll system with flexible template support. Organizations can define their own Excel schemas and the system will generate outputs matching those exact schemas. The overnight stay logic is cleanly isolated and only activates when the OVERTIME_OVERNIGHT special rule is configured, preventing unintended overnight punch linking. All data persists in memory by default, with optional Bolt Database integration for backup. The architecture maintains clear separation between business logic, UI, and state management, making the system maintainable and testable. Arabic RTL support ensures usability for Arabic-speaking staff, while the audit trail provides full transparency into all calculations.

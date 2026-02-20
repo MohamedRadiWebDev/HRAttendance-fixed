@@ -1,0 +1,6 @@
+{
+  "name": "normal-day",
+  "employees": [{ "code": "200", "shiftStart": "09:00" }],
+  "punches": ["2024-06-03T07:00:00Z", "2024-06-03T15:00:00Z"],
+  "expected": { "status": "Present", "date": "2024-06-03" }
+}

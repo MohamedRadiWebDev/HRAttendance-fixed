@@ -1,0 +1,6 @@
+{
+  "name": "late-early-missing",
+  "employees": [{ "code": "201", "shiftStart": "09:00" }],
+  "punches": ["2024-06-04T09:45:00Z"],
+  "expected": { "hasLate": true, "hasMissing": true }
+}

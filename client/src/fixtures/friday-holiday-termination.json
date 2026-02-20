@@ -1,0 +1,7 @@
+{
+  "name": "friday-holiday-termination",
+  "employees": [{ "code": "204", "shiftStart": "09:00", "terminationDate": "2024-06-08" }],
+  "punches": ["2024-06-07T12:30:00Z", "2024-06-08T09:00:00Z"],
+  "officialHolidays": [{ "date": "2024-06-08", "name": "Holiday" }],
+  "expected": { "includesFriday": true, "includesHoliday": true }
+}
