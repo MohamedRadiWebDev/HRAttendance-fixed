@@ -17,6 +17,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { buildAttendanceExportRows } from "@/exporters/attendanceExport";
 import { useAttendanceStore } from "@/store/attendanceStore";
 import { useEffectsStore } from "@/store/effectsStore";
@@ -49,6 +50,35 @@ export default function Attendance() {
   const [timelineRecord, setTimelineRecord] = useState<any | null>(null);
   const [effectsRecord, setEffectsRecord] = useState<any | null>(null);
   const [showEffectsDebug, setShowEffectsDebug] = useState(false);
+  const [viewTab, setViewTab] = useState<"detailed" | "exceptions" | "summary">("detailed");
+
+  const getReasons = (record: any) => {
+    const reasons: string[] = [];
+    if ((record?.terminationPeriodDays ?? 0) > 0) reasons.push("بعد ترك العمل → فترة ترك (خصم)");
+    if (record?.notes?.includes("فترة الالتحاق")) reasons.push("قبل التعيين → فترة الالتحاق");
+    if (record?.isOfficialHoliday) reasons.push("إجازة رسمية");
+    if ((record?.compDaysFriday ?? 0) > 0) reasons.push("بدل يوم الجمعة");
+    if ((record?.compDaysOfficial ?? 0) > 0) reasons.push("بدل إجازة رسمية");
+    const penalties = Array.isArray(record?.penalties) ? record.penalties : [];
+    for (const p of penalties) {
+      const t = String(p?.type || "");
+      if (t === "late_arrival") reasons.push("تأخير");
+      if (t === "early_leave") reasons.push("انصراف مبكر");
+      if (t === "missing_stamp") reasons.push("سهو بصمة");
+      if (t === "absence") reasons.push("غياب");
+    }
+    return Array.from(new Set(reasons));
+  };
+
+  const getRowTone = (record: any) => {
+    const penalties = Array.isArray(record?.penalties) ? record.penalties : [];
+    const has = (type: string) => penalties.some((p: any) => String(p?.type || "") === type && (Number(p?.value ?? p?.minutes ?? p?.days ?? 0) || 0) > 0);
+    if (has("absence")) return "bg-red-50";
+    if (has("missing_stamp")) return "bg-orange-50";
+    if (has("late_arrival") || has("early_leave")) return "bg-yellow-50";
+    if ((record?.compDaysTotal ?? 0) > 0 || (record?.compDayCredit ?? 0) > 0) return "bg-emerald-50";
+    return "";
+  };
 
   const parseDateInput = (value: string) => {
     if (!value) return null;
@@ -71,6 +101,7 @@ export default function Attendance() {
     const params = new URLSearchParams(queryString);
     const startDate = params.get("startDate");
     const endDate = params.get("endDate");
+    const employeeCodeFromUrl = params.get("employeeCode");
     const storedStart = localStorage.getItem("attendanceStartDate");
     const storedEnd = localStorage.getItem("attendanceEndDate");
     const nextStart = startDate || storedStart || "";
@@ -85,6 +116,7 @@ export default function Attendance() {
       start: formatDisplayDate(nextStart),
       end: formatDisplayDate(nextEnd),
     });
+    if (employeeCodeFromUrl) setEmployeeFilter(employeeCodeFromUrl);
     hasInitialized.current = true;
   }, [location]);
 
@@ -118,6 +150,18 @@ export default function Attendance() {
     return true;
   });
 
+  const visibleRecords = useMemo(() => {
+    const rows = filteredRecords || [];
+    if (viewTab === "exceptions") {
+      return rows.filter((r: any) => {
+        const penalties = Array.isArray(r?.penalties) ? r.penalties : [];
+        const hasPenalty = penalties.some((p: any) => (Number(p?.value ?? p?.minutes ?? p?.days ?? 0) || 0) > 0);
+        return hasPenalty;
+      });
+    }
+    return rows;
+  }, [filteredRecords, viewTab]);
+
   const adjustmentFilters = {
     startDate: dateRange.start && dateRange.end ? dateRange.start : undefined,
     endDate: dateRange.start && dateRange.end ? dateRange.end : undefined,
@@ -142,7 +186,7 @@ export default function Attendance() {
   const desktopRowHeight = 56;
   const overscanRows = 8;
   const desktopVirtual = useMemo(() => {
-    const rows = filteredRecords || [];
+    const rows = visibleRecords || [];
     const start = Math.max(0, Math.floor(desktopScrollTop / desktopRowHeight) - overscanRows);
     const visibleCount = Math.ceil(desktopViewportHeight / desktopRowHeight) + overscanRows * 2;
     const end = Math.min(rows.length, start + visibleCount);
@@ -154,7 +198,7 @@ export default function Attendance() {
       bottomSpacer: Math.max(0, (rows.length - end) * desktopRowHeight),
       total: rows.length,
     };
-  }, [filteredRecords, desktopScrollTop]);
+  }, [visibleRecords, desktopScrollTop]);
 
   const effectsByKey = useMemo(() => {
     const map = new Map<string, any[]>();
@@ -449,7 +493,7 @@ export default function Attendance() {
         
         <main className="flex-1 overflow-y-auto p-8">
           <div className="bg-white rounded-2xl border border-border/50 shadow-sm overflow-hidden flex flex-col h-full">
-            <div className="p-6 border-b border-border/50 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="p-6 border-b border-border/50 flex flex-col gap-4 sticky top-0 z-10 bg-white/90 backdrop-blur">
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-2 bg-slate-50 border border-border rounded-lg p-1">
                   <Input 
@@ -534,6 +578,28 @@ export default function Attendance() {
                   يعيد حساب الحضور من البصمة للفترة المختارة
                 </span>
               </div>
+
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div className="flex-1">
+                  <Tabs value={viewTab} onValueChange={(v) => setViewTab(v as any)}>
+                    <TabsList>
+                      <TabsTrigger value="detailed">تفصيلي</TabsTrigger>
+                      <TabsTrigger value="exceptions">استثناءات فقط</TabsTrigger>
+                      <TabsTrigger value="summary">ملخص</TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button onClick={handleProcessAttendance} disabled={processAttendance.isPending} className="gap-2">
+                    <RefreshCw className={cn("w-4 h-4", processAttendance.isPending && "animate-spin")} />
+                    تحديث
+                  </Button>
+                  <Button onClick={handleExportExcel} className="gap-2" variant="outline">
+                    <Download className="w-4 h-4" />
+                    تصدير Excel
+                  </Button>
+                </div>
+              </div>
             </div>
 
             <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/40 p-3 text-xs text-slate-700">
@@ -550,6 +616,26 @@ export default function Attendance() {
               )}
             </div>
 
+            {viewTab === "summary" ? (
+              <div className="p-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>الملخص</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3 text-sm text-muted-foreground">
+                    <div>📌 الملخص التفصيلي متاح حالياً في تصدير Excel (شيت <strong>ملخص</strong>).</div>
+                    <div>💡 استخدم Ctrl+K للبحث عن موظف وفتح تقريره.</div>
+                    <div className="flex gap-2">
+                      <Button onClick={handleExportExcel} className="gap-2">
+                        <Download className="w-4 h-4" />
+                        تصدير Excel
+                      </Button>
+                      <Button variant="outline" onClick={() => setViewTab("detailed")}>عودة</Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            ) : (
             <div className="flex-1 overflow-auto" style={{ maxHeight: desktopViewportHeight }} onScroll={(e) => setDesktopScrollTop((e.currentTarget as HTMLDivElement).scrollTop)}>
               <table className="w-full text-sm text-right min-w-[1100px] hidden md:table">
                 <thead className="bg-slate-50 text-muted-foreground font-medium sticky top-0 z-10 shadow-sm">
@@ -571,13 +657,13 @@ export default function Attendance() {
                     <tr><td colSpan={10} className="px-6 py-8 text-center">جاري تحميل البيانات...</td></tr>
                   ) : !dateRange.start || !dateRange.end ? (
                     <tr><td colSpan={10} className="px-6 py-8 text-center text-muted-foreground">يرجى تحديد الفترة أولاً.</td></tr>
-                  ) : filteredRecords?.length === 0 ? (
+                  ) : visibleRecords?.length === 0 ? (
                     <tr><td colSpan={10} className="px-6 py-8 text-center text-muted-foreground">لا توجد سجلات في هذه الفترة. جرّب معالجة الحضور بعد استيراد البصمة.</td></tr>
 ) : (
                     <>
                       {desktopVirtual.topSpacer > 0 && <tr><td colSpan={10} style={{ height: desktopVirtual.topSpacer }} /></tr>}
                       {desktopVirtual.rows.map((record: any) => (
-                      <tr key={record.id} className="hover:bg-slate-50/50 transition-colors cursor-pointer" onClick={() => setEffectsRecord(record)}>
+                      <tr key={record.id} className={cn("transition-colors cursor-pointer hover:bg-slate-50/50", getRowTone(record))} onClick={() => setEffectsRecord(record)}>
                         <td className="px-6 py-4 font-mono text-muted-foreground">{record.date}</td>
                         <td className="px-6 py-4 font-medium">{record.employeeCode}</td>
                         <td className="px-6 py-4 font-mono" dir="ltr">
@@ -591,8 +677,23 @@ export default function Attendance() {
                           {record.overtimeHours && record.overtimeHours > 0 ? `+${record.overtimeHours.toFixed(2)}` : "-"}
                         </td>
                         <td className="px-6 py-4">
-                          <div className="flex flex-wrap gap-2">
-                            <StatusBadge status={record.status} />
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <div className="inline-flex items-center gap-2 cursor-help">
+                                  <StatusBadge status={record.status} />
+                                  <span className="text-xs text-muted-foreground underline decoration-dotted">👁️</span>
+                                </div>
+                              </TooltipTrigger>
+                              <TooltipContent className="max-w-[320px]">
+                                <div className="font-semibold mb-1">لماذا تم احتساب اليوم بهذا الشكل؟</div>
+                                <ul className="list-disc pr-4 space-y-1">
+                                  {getReasons(record).length
+                                    ? getReasons(record).map((r) => <li key={r}>{r}</li>)
+                                    : <li>لا توجد أسباب إضافية.</li>}
+                                </ul>
+                              </TooltipContent>
+                            </Tooltip>
                             {record.isOfficialHoliday && (
                               <span className="px-2.5 py-0.5 rounded-full text-xs font-bold border bg-blue-100 text-blue-700 border-blue-200">
                                 إجازة رسمية
@@ -755,6 +856,7 @@ export default function Attendance() {
                 )}
               </div>
             </div>
+            )}
 
             {limit > 0 && totalPages > 1 && (
               <div className="p-4 border-t border-border/50 flex items-center justify-center gap-2 bg-white">

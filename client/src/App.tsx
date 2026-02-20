@@ -15,6 +15,7 @@ import {
 import NotFound from "@/pages/not-found";
 import Dashboard from "@/pages/Dashboard";
 import Employees from "@/pages/Employees";
+import EmployeeProfile from "@/pages/EmployeeProfile";
 import Attendance from "@/pages/Attendance";
 import AttendanceHeatmap from "@/pages/AttendanceHeatmap";
 import Import from "@/pages/Import";
@@ -28,6 +29,8 @@ import { clearPersistedState, exportIncompatibleBackup, getStorageCompatibility 
 import { useToast } from "@/hooks/use-toast";
 import { AppErrorBoundary } from "@/components/AppErrorBoundary";
 import { pushDiagnosticError } from "@/lib/errorHandling";
+import { GlobalSearch } from "@/components/GlobalSearch";
+import { resolveThemeClass, useUiStore } from "@/store/uiStore";
 
 function Router() {
 
@@ -45,6 +48,7 @@ function Router() {
     <Switch>
       <Route path="/" component={Dashboard} />
       <Route path="/employees" component={Employees} />
+      <Route path="/employees/:code" component={EmployeeProfile} />
       <Route path="/attendance" component={Attendance} />
       <Route path="/attendance-heatmap" component={AttendanceHeatmap} />
       <Route path="/import" component={Import} />
@@ -64,6 +68,7 @@ function Router() {
 function App() {
   const { toast } = useToast();
   const [showIncompatible, setShowIncompatible] = useState(false);
+  const theme = useUiStore((s) => s.theme);
 
   useEffect(() => {
     const compatibility = getStorageCompatibility();
@@ -71,6 +76,22 @@ function App() {
       setShowIncompatible(true);
     }
   }, []);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const apply = () => {
+      const cls = resolveThemeClass(theme);
+      if (cls === "dark") root.classList.add("dark");
+      else root.classList.remove("dark");
+    };
+    apply();
+    if (theme !== "system") return;
+    const mq = window.matchMedia?.("(prefers-color-scheme: dark)");
+    if (!mq) return;
+    const onChange = () => apply();
+    mq.addEventListener?.("change", onChange);
+    return () => mq.removeEventListener?.("change", onChange);
+  }, [theme]);
 
   useEffect(() => {
     const handler = (event: Event) => {
@@ -116,6 +137,7 @@ function App() {
   return (
     <TooltipProvider>
       <Toaster />
+      <GlobalSearch />
       <AppErrorBoundary>
         <Router />
       </AppErrorBoundary>
