@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { normalizeEmployeeCode } from "@shared/employee-code";
 import { normalizeEffectDateKey, normalizeEffectTimeKey, normalizeEffectType } from "@shared/effect-normalization";
+import { useEffectsHistoryStore } from "@/store/effectsHistoryStore";
 
 export type EffectSource = "manual" | "excel";
 
@@ -80,6 +81,8 @@ const persistEffects = (effects: Effect[]) => {
 export const useEffectsStore = create<EffectsState>((set) => ({
   effects: loadEffects(),
   setEffects: (rows) => {
+    const current = useEffectsStore.getState().effects;
+    if (current.length) useEffectsHistoryStore.getState().capture(current);
     const migrated = rows.map(migrateEffect).filter(Boolean) as Effect[];
     persistEffects(migrated);
     set({ effects: migrated });
@@ -87,6 +90,7 @@ export const useEffectsStore = create<EffectsState>((set) => ({
   upsertEffects: (rows) => {
     let stats = { inserted: 0, updated: 0, total: 0 };
     set((state) => {
+      if (state.effects.length) useEffectsHistoryStore.getState().capture(state.effects);
       const now = new Date().toISOString();
       const keyToId = new Map<string, string>();
       const idToRow = new Map<string, Effect>();
@@ -134,6 +138,7 @@ export const useEffectsStore = create<EffectsState>((set) => ({
   },
   updateEffect: (id, patch) =>
     set((state) => {
+      if (state.effects.length) useEffectsHistoryStore.getState().capture(state.effects);
       const now = new Date().toISOString();
       const next = state.effects.map((row) => {
         if (row.id !== id) return row;
@@ -144,11 +149,14 @@ export const useEffectsStore = create<EffectsState>((set) => ({
       return { effects: next };
     }),
   clearEffects: () => {
+    const current = useEffectsStore.getState().effects;
+    if (current.length) useEffectsHistoryStore.getState().capture(current);
     persistEffects([]);
     set({ effects: [] });
   },
   removeEffect: (id) =>
     set((state) => {
+      if (state.effects.length) useEffectsHistoryStore.getState().capture(state.effects);
       const next = state.effects.filter((row) => row.id !== id);
       persistEffects(next);
       return { effects: next };

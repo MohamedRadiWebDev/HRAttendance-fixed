@@ -487,8 +487,53 @@ export default function Attendance() {
         return ws;
       };
 
-      applySheet("تفصيلي", detailHeaders, detailRows, { xSplit: 4 });
-      applySheet("ملخص", summaryHeaders, summaryRows, { xSplit: 2 });
+      const wsDetail = applySheet("تفصيلي", detailHeaders, detailRows, { xSplit: 4 });
+      const wsSummary = applySheet("ملخص", summaryHeaders, summaryRows, { xSplit: 2 });
+
+      // Optional: write formulas in Summary so totals stay consistent even after manual edits.
+      // We only set formulas for numeric aggregations that are safe SUMIFs.
+      try {
+        const detailHeaderIndex = new Map<string, string>();
+        detailHeaders.forEach((h, i) => detailHeaderIndex.set(h, wsDetail.getColumn(i + 1).letter));
+        const sumHeaderIndex = new Map<string, number>();
+        summaryHeaders.forEach((h, i) => sumHeaderIndex.set(h, i + 1));
+
+        const codeColLetter = detailHeaderIndex.get("الكود") || "C";
+
+        const sumif = (detailValueHeader: string, summaryHeader: string) => {
+          const valueLetter = detailHeaderIndex.get(detailValueHeader);
+          const targetCol = sumHeaderIndex.get(summaryHeader);
+          if (!valueLetter || !targetCol) return;
+          for (let r = 2; r <= wsSummary.rowCount; r++) {
+            const codeCell = wsSummary.getRow(r).getCell(1); // Summary code is always first
+            if (!codeCell.value) continue;
+            wsSummary.getRow(r).getCell(targetCol).value = {
+              formula: `SUMIF('تفصيلي'!$${codeColLetter}:$${codeColLetter},$A${r},'تفصيلي'!$${valueLetter}:$${valueLetter})`,
+            };
+          }
+        };
+
+        // Joining / Termination period totals
+        sumif("فترة الالتحاق", "فترة الالتحاق");
+        sumif("فترة الترك", "فترة الترك");
+
+        // Penalties totals
+        sumif("تأخير", "إجمالي التأخيرات");
+        sumif("انصراف مبكر", "إجمالي الانصراف المبكر");
+        sumif("سهو بصمة", "إجمالي سهو البصمة");
+        sumif("غياب", "إجمالي الغياب");
+        sumif("إجمالي الجزاءات", "إجمالي الجزاءات");
+
+        // Keep Summary "ملاحظات" empty for manual user notes.
+        const notesCol = sumHeaderIndex.get("ملاحظات");
+        if (notesCol) {
+          for (let r = 2; r <= wsSummary.rowCount; r++) {
+            wsSummary.getRow(r).getCell(notesCol).value = "";
+          }
+        }
+      } catch {
+        // If anything goes wrong with formulas, export still succeeds with computed values.
+      }
 
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
