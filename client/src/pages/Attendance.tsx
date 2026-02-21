@@ -17,9 +17,12 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { buildAttendanceExportRows } from "@/exporters/attendanceExport";
 import { useAttendanceStore } from "@/store/attendanceStore";
 import { useEffectsStore } from "@/store/effectsStore";
+import { useEffectsHistoryStore } from "@/store/effectsHistoryStore";
+import { QuickAddEffectDialog } from "@/components/QuickAddEffectDialog";
 import { resolveShiftForDate, timeStringToSeconds } from "@/engine/attendanceEngine";
 
 // NOTE: XLSX remains used for parsing imports elsewhere in the app.
@@ -49,6 +52,13 @@ export default function Attendance() {
   const [timelineRecord, setTimelineRecord] = useState<any | null>(null);
   const [effectsRecord, setEffectsRecord] = useState<any | null>(null);
   const [showEffectsDebug, setShowEffectsDebug] = useState(false);
+  const [activeTab, setActiveTab] = useState<"detail" | "exceptions" | "summary">("detail");
+  const [quickAddTarget, setQuickAddTarget] = useState<{ code: string; name?: string; date: string } | null>(null);
+
+  const canUndo = useEffectsHistoryStore((s) => s.canUndo());
+  const canRedo = useEffectsHistoryStore((s) => s.canRedo());
+  const undo = useEffectsHistoryStore((s) => s.undo);
+  const redo = useEffectsHistoryStore((s) => s.redo);
 
   const parseDateInput = (value: string) => {
     if (!value) return null;
@@ -118,6 +128,33 @@ export default function Attendance() {
     return true;
   });
 
+  const displayedRecords = useMemo(() => {
+    const rows = filteredRecords || [];
+    if (activeTab === "exceptions") {
+      return rows.filter((r: any) => {
+        const penalties = Array.isArray(r.penalties) ? r.penalties : [];
+        const hasPenalty = penalties.length > 0;
+        const hasAbsent = r.status === "Absent" || Number(r.absenceDays || 0) > 0;
+        const hasMissing = penalties.some((p: any) => String(p.type || "").toLowerCase().includes("missing")) || Number(r.missingStampMinutes || 0) > 0;
+        const hasLate = r.status === "Late" || penalties.some((p: any) => String(p.type || "").toLowerCase().includes("late")) || Number(r.lateMinutes || 0) > 0;
+        const hasEarly = penalties.some((p: any) => String(p.type || "").toLowerCase().includes("early")) || Number(r.earlyLeaveMinutes || 0) > 0;
+        return hasPenalty || hasAbsent || hasMissing || hasLate || hasEarly;
+      });
+    }
+    return rows;
+  }, [filteredRecords, activeTab]);
+
+  const summaryTable = useMemo(() => {
+    if (activeTab !== "summary") return null;
+    if (!dateRange.start || !dateRange.end) return null;
+    return buildAttendanceExportRows({
+      records: (filteredRecords || []) as any,
+      employees: (employees || []) as any,
+      reportStartDate: dateRange.start,
+      reportEndDate: dateRange.end,
+    });
+  }, [activeTab, filteredRecords, employees, dateRange.start, dateRange.end]);
+
   const adjustmentFilters = {
     startDate: dateRange.start && dateRange.end ? dateRange.start : undefined,
     endDate: dateRange.start && dateRange.end ? dateRange.end : undefined,
@@ -142,7 +179,7 @@ export default function Attendance() {
   const desktopRowHeight = 56;
   const overscanRows = 8;
   const desktopVirtual = useMemo(() => {
-    const rows = filteredRecords || [];
+    const rows = displayedRecords || [];
     const start = Math.max(0, Math.floor(desktopScrollTop / desktopRowHeight) - overscanRows);
     const visibleCount = Math.ceil(desktopViewportHeight / desktopRowHeight) + overscanRows * 2;
     const end = Math.min(rows.length, start + visibleCount);
@@ -154,7 +191,7 @@ export default function Attendance() {
       bottomSpacer: Math.max(0, (rows.length - end) * desktopRowHeight),
       total: rows.length,
     };
-  }, [filteredRecords, desktopScrollTop]);
+  }, [displayedRecords, desktopScrollTop]);
 
   const effectsByKey = useMemo(() => {
     const map = new Map<string, any[]>();
@@ -177,6 +214,37 @@ export default function Attendance() {
   const employeesByCode = useMemo(() => {
     return new Map((employees || []).map((employee) => [employee.code, employee]));
   }, [employees]);
+
+  const rowToneClass = (record: any) => {
+    const penalties = Array.isArray(record.penalties) ? record.penalties : [];
+    const isAbsent = record.status === "Absent" || Number(record.absenceDays || 0) > 0;
+    const isMissing = penalties.some((p: any) => String(p.type || "").toLowerCase().includes("missing")) || Number(record.missingStampMinutes || 0) > 0;
+    const isLateOrEarly = record.status === "Late" || Number(record.lateMinutes || 0) > 0 || Number(record.earlyLeaveMinutes || 0) > 0;
+    const isComp = Number(record.compDayCredit || 0) > 0 || record.status === "Comp Day";
+    if (isAbsent) return "bg-red-50/60 hover:bg-red-50 dark:bg-red-950/30 dark:hover:bg-red-950/40";
+    if (isMissing) return "bg-orange-50/60 hover:bg-orange-50 dark:bg-orange-950/25 dark:hover:bg-orange-950/35";
+    if (isLateOrEarly) return "bg-yellow-50/60 hover:bg-yellow-50 dark:bg-yellow-950/25 dark:hover:bg-yellow-950/35";
+    if (isComp) return "bg-emerald-50/60 hover:bg-emerald-50 dark:bg-emerald-950/25 dark:hover:bg-emerald-950/35";
+    return "hover:bg-slate-50/50 dark:hover:bg-slate-900/40";
+  };
+
+  const explainReasons = (record: any) => {
+    const reasons: string[] = [];
+    if (record.status === "Joining Period" || Number(record.joiningPeriodDays || 0) > 0) reasons.push("قبل تاريخ التعيين (فترة الالتحاق)");
+    if (record.status === "Termination Period" || Number(record.terminationPeriodDays || 0) > 0) reasons.push("بعد تاريخ ترك العمل (فترة الترك)");
+    if (record.status === "Friday" || record.status === "Friday Attended") reasons.push("يوم جمعة");
+    if (record.isOfficialHoliday) reasons.push("إجازة رسمية");
+    if (Number(record.compDayCredit || 0) > 0) reasons.push("محتسب كبدل / Comp Day");
+    const penalties = Array.isArray(record.penalties) ? (record.penalties as any[]) : [];
+    penalties.forEach((p) => {
+      const t = String(p.type || "").trim();
+      if (t) reasons.push(`جزاء: ${t}${p.value !== undefined ? ` (${p.value})` : ""}`);
+    });
+    const matchedEffects = (effectsByKey.get(`${record.employeeCode}__${record.date}`) || []).length;
+    if (matchedEffects) reasons.push(`مؤثرات مطبّقة: ${matchedEffects}`);
+    if (reasons.length === 0) reasons.push("لا يوجد أسباب إضافية");
+    return reasons;
+  };
 
   const getLocalDateKey = (date: Date) => {
     const year = date.getFullYear();
@@ -449,7 +517,7 @@ export default function Attendance() {
         
         <main className="flex-1 overflow-y-auto p-8">
           <div className="bg-white rounded-2xl border border-border/50 shadow-sm overflow-hidden flex flex-col h-full">
-            <div className="p-6 border-b border-border/50 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="p-6 border-b border-border/50 flex flex-col sm:flex-row items-center justify-between gap-4 sticky top-0 z-20 bg-background/90 backdrop-blur">
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-2 bg-slate-50 border border-border rounded-lg p-1">
                   <Input 
@@ -517,6 +585,12 @@ export default function Attendance() {
 
               <div className="flex flex-col items-end gap-1">
                 <div className="flex items-center gap-3">
+                  <Button variant="outline" onClick={undo} disabled={!canUndo}>
+                    تراجع
+                  </Button>
+                  <Button variant="outline" onClick={redo} disabled={!canRedo}>
+                    إعادة
+                  </Button>
                   <Button variant="outline" onClick={handleProcess} disabled={processAttendance.isPending} className="gap-2">
                     <RefreshCw className={cn("w-4 h-4", processAttendance.isPending && "animate-spin")} />
                     معالجة الحضور
@@ -536,6 +610,16 @@ export default function Attendance() {
               </div>
             </div>
 
+            <div className="px-6 py-3 border-b border-border/50 bg-slate-50/30">
+              <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} dir="rtl">
+                <TabsList className="grid grid-cols-3 w-full sm:w-[420px]">
+                  <TabsTrigger value="detail">تفصيلي</TabsTrigger>
+                  <TabsTrigger value="summary">ملخص</TabsTrigger>
+                  <TabsTrigger value="exceptions">استثناءات فقط</TabsTrigger>
+                </TabsList>
+              </Tabs>
+            </div>
+
             <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/40 p-3 text-xs text-slate-700">
               <div className="flex items-center justify-between">
                 <span className="font-semibold">تشخيص المؤثرات</span>
@@ -550,6 +634,33 @@ export default function Attendance() {
               )}
             </div>
 
+            {activeTab === "summary" ? (
+              <div className="flex-1 overflow-auto" style={{ maxHeight: desktopViewportHeight }}>
+                {!summaryTable ? (
+                  <div className="p-6 text-center text-muted-foreground">يرجى تحديد الفترة أولاً لعرض الملخص.</div>
+                ) : (
+                  <table className="w-full text-sm text-right min-w-[1100px]">
+                    <thead className="bg-slate-50 text-muted-foreground font-medium sticky top-0 z-10 shadow-sm">
+                      <tr>
+                        {summaryTable.summaryHeaders.map((h) => (
+                          <th key={h} className="px-4 py-3 whitespace-nowrap">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border/50">
+                      {summaryTable.summaryRows.map((row, idx) => (
+                        <tr key={idx} className="hover:bg-slate-50/50">
+                          {row.map((cell, cidx) => (
+                            <td key={cidx} className="px-4 py-3 whitespace-nowrap">{String(cell ?? "")}</td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            ) : (
+              <>
             <div className="flex-1 overflow-auto" style={{ maxHeight: desktopViewportHeight }} onScroll={(e) => setDesktopScrollTop((e.currentTarget as HTMLDivElement).scrollTop)}>
               <table className="w-full text-sm text-right min-w-[1100px] hidden md:table">
                 <thead className="bg-slate-50 text-muted-foreground font-medium sticky top-0 z-10 shadow-sm">
@@ -571,13 +682,13 @@ export default function Attendance() {
                     <tr><td colSpan={10} className="px-6 py-8 text-center">جاري تحميل البيانات...</td></tr>
                   ) : !dateRange.start || !dateRange.end ? (
                     <tr><td colSpan={10} className="px-6 py-8 text-center text-muted-foreground">يرجى تحديد الفترة أولاً.</td></tr>
-                  ) : filteredRecords?.length === 0 ? (
+                  ) : displayedRecords?.length === 0 ? (
                     <tr><td colSpan={10} className="px-6 py-8 text-center text-muted-foreground">لا توجد سجلات في هذه الفترة. جرّب معالجة الحضور بعد استيراد البصمة.</td></tr>
 ) : (
                     <>
                       {desktopVirtual.topSpacer > 0 && <tr><td colSpan={10} style={{ height: desktopVirtual.topSpacer }} /></tr>}
                       {desktopVirtual.rows.map((record: any) => (
-                      <tr key={record.id} className="hover:bg-slate-50/50 transition-colors cursor-pointer" onClick={() => setEffectsRecord(record)}>
+                      <tr key={record.id} className={cn("transition-colors cursor-pointer", rowToneClass(record))} onClick={() => setEffectsRecord(record)}>
                         <td className="px-6 py-4 font-mono text-muted-foreground">{record.date}</td>
                         <td className="px-6 py-4 font-medium">{record.employeeCode}</td>
                         <td className="px-6 py-4 font-mono" dir="ltr">
@@ -592,7 +703,38 @@ export default function Attendance() {
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex flex-wrap gap-2">
-                            <StatusBadge status={record.status} />
+                            <div className="flex items-center gap-2">
+                              <StatusBadge status={record.status} />
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => e.stopPropagation()}>
+                                    <span className="text-xs">👁️</span>
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent className="max-w-[320px]" dir="rtl">
+                                  <div className="space-y-1">
+                                    {explainReasons(record).map((r, i) => (
+                                      <div key={i}>• {r}</div>
+                                    ))}
+                                  </div>
+                                </TooltipContent>
+                              </Tooltip>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 px-2 text-xs"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setQuickAddTarget({
+                                    code: record.employeeCode,
+                                    name: employeesByCode.get(record.employeeCode)?.nameAr,
+                                    date: record.date,
+                                  });
+                                }}
+                              >
+                                + مؤثر
+                              </Button>
+                            </div>
                             {record.isOfficialHoliday && (
                               <span className="px-2.5 py-0.5 rounded-full text-xs font-bold border bg-blue-100 text-blue-700 border-blue-200">
                                 إجازة رسمية
@@ -694,10 +836,10 @@ export default function Attendance() {
                   <div className="text-center text-muted-foreground">جاري تحميل البيانات...</div>
                 ) : !dateRange.start || !dateRange.end ? (
                   <div className="text-center text-muted-foreground">يرجى تحديد الفترة أولاً.</div>
-                ) : filteredRecords?.length === 0 ? (
+                ) : displayedRecords?.length === 0 ? (
                   <div className="text-center text-muted-foreground">لا توجد سجلات في هذه الفترة.</div>
                 ) : (
-                  filteredRecords?.map((record: any) => (
+                  displayedRecords?.map((record: any) => (
                     <div key={record.id} className="bg-white border border-border/50 rounded-xl p-4 shadow-sm space-y-2">
                       <div className="flex items-center justify-between">
                         <span className="text-xs text-muted-foreground">{record.date}</span>
@@ -755,31 +897,30 @@ export default function Attendance() {
                 )}
               </div>
             </div>
-
             {limit > 0 && totalPages > 1 && (
               <div className="p-4 border-t border-border/50 flex items-center justify-center gap-2 bg-white">
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  disabled={page === 1} 
-                  onClick={() => setPage(p => Math.max(1, p - 1))}
-                >
+                <Button variant="outline" size="sm" disabled={page === 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
                   السابق
                 </Button>
-                <div className="text-sm font-medium">
-                  صفحة {page} من {totalPages}
-                </div>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  disabled={page === totalPages} 
-                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                >
+                <div className="text-sm font-medium">صفحة {page} من {totalPages}</div>
+                <Button variant="outline" size="sm" disabled={page === totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>
                   التالي
                 </Button>
               </div>
             )}
+            </>
+            )}
           </div>
+
+          <QuickAddEffectDialog
+            open={Boolean(quickAddTarget)}
+            onOpenChange={(open) => {
+              if (!open) setQuickAddTarget(null);
+            }}
+            employeeCode={quickAddTarget?.code || ""}
+            employeeName={quickAddTarget?.name}
+            defaultDate={quickAddTarget?.date || dateRange.start || ""}
+          />
 
           <Sheet open={Boolean(effectsRecord)} onOpenChange={(open) => !open && setEffectsRecord(null)}>
             <SheetContent side="left" className="w-full sm:max-w-lg" dir="rtl">

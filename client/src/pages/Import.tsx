@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Upload, FileDown, FileType, CheckCircle, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import * as XLSX from 'xlsx';
-import { useImportEmployees, useImportPunches } from "@/hooks/use-employees";
+import { useEmployees, useImportEmployees, useImportPunches } from "@/hooks/use-employees";
 import { useProcessAttendance } from "@/hooks/use-attendance";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { format, parse, parseISO, isValid } from "date-fns";
@@ -94,10 +94,14 @@ const getImportCell = (row: Record<string, unknown>, aliases: string[]) => {
 
 export default function Import() {
   const { toast } = useToast();
+  const { data: employees } = useEmployees();
   const importEmployees = useImportEmployees();
   const importPunches = useImportPunches();
   const processAttendance = useProcessAttendance();
   const [previewData, setPreviewData] = useState<any[]>([]);
+  const [importLog, setImportLog] = useState<{ accepted: number; rejected: number; reasons: Record<string, number> } | null>(null);
+  const [detectedColumns, setDetectedColumns] = useState<string[]>([]);
+  const [punchStaging, setPunchStaging] = useState<{ employeeCode: string; punchDatetime: string; __row: number; __reason?: string }[]>([]);
   const [activeTab, setActiveTab] = useState("employees");
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -137,32 +141,109 @@ export default function Import() {
     return isValid(fallback) ? fallback : null;
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const readXlsxFile = (file: File) =>
+    new Promise<any[]>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const wb = XLSX.read(reader.result as ArrayBuffer, { type: "array", cellDates: true });
+          const wsname = wb.SheetNames[0];
+          const ws = wb.Sheets[wsname];
+          const data = XLSX.utils.sheet_to_json(ws, { defval: "" }) as any[];
+          resolve(data);
+        } catch (e) {
+          reject(e);
+        }
+      };
+      reader.onerror = () => reject(reader.error);
+      reader.readAsArrayBuffer(file);
+    });
 
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      try {
-        const bstr = evt.target?.result;
-        const wb = XLSX.read(bstr, { type: 'binary', cellDates: true });
-        const wsname = wb.SheetNames[0];
-        const ws = wb.Sheets[wsname];
-        const data = XLSX.utils.sheet_to_json(ws);
-        
-        
-        if (data.length === 0) {
-          toast({ title: "تنبيه", description: "الملف فارغ", variant: "destructive" });
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+
+    setImportLog(null);
+    setDetectedColumns([]);
+
+    try {
+      if (activeTab === "punches") {
+        // Multi-file merge 🔥
+        const allRows: any[] = [];
+        for (const f of files) {
+          const rows = await readXlsxFile(f);
+          allRows.push(...rows);
+        }
+        if (allRows.length === 0) {
+          toast({ title: "تنبيه", description: "الملفات فارغة", variant: "destructive" });
           return;
         }
-        
-        setPreviewData(data);
-        toast({ title: "تم قراءة الملف", description: `تم العثور على ${data.length} سجل` });
-      } catch (err: any) {
-        toast({ title: "خطأ في قراءة الملف", description: err.message, variant: "destructive" });
+        const firstRow = allRows[0] || {};
+        setDetectedColumns(Object.keys(firstRow));
+
+        // Map + validate + dedupe (same minute)
+        // (Unknown-code validation is also applied during final import.)
+
+        const knownCodes = new Set((employees || []).map((e) => normalizeEmployeeCode((e as any).code)).filter(Boolean));
+        const seen = new Set<string>();
+        const reasons: Record<string, number> = {};
+        let accepted = 0;
+        let rejected = 0;
+
+        const staging: { employeeCode: string; punchDatetime: string; __row: number; __reason?: string }[] = [];
+
+        const mappedPreview = allRows.map((row, idx) => {
+          const code = normalizeEmployeeCode(getImportCell(row, ["الكود", "كود", "Code", "ID", "EmpCode", "Employee Code"])) || "";
+          const rawDate = getImportCell(row, ["التاريخ", "Date", "PunchDate", "DateTime", "Timestamp", "الوقت", "Punch Time"]);
+          const parsed = parsePunchDate(rawDate);
+          if (!code) {
+            rejected += 1;
+            reasons["missing_code"] = (reasons["missing_code"] || 0) + 1;
+            return { __row: idx + 1, __status: "error", __reason: "كود فارغ", code: "", datetime: "" };
+          }
+          if (!parsed) {
+            rejected += 1;
+            reasons["bad_date"] = (reasons["bad_date"] || 0) + 1;
+            return { __row: idx + 1, __status: "error", __reason: "تاريخ/وقت غير صالح", code, datetime: String(rawDate || "") };
+          }
+          const iso = parsed.toISOString();
+          const minuteKey = iso.slice(0, 16); // YYYY-MM-DDTHH:mm
+          const key = `${code}|${minuteKey}`;
+          if (seen.has(key)) {
+            rejected += 1;
+            reasons["duplicate_minute"] = (reasons["duplicate_minute"] || 0) + 1;
+            return { __row: idx + 1, __status: "error", __reason: "بصمة مكررة في نفس الدقيقة", code, datetime: iso };
+          }
+          seen.add(key);
+          if (knownCodes.size > 0 && !knownCodes.has(code)) {
+            rejected += 1;
+            reasons["unknown_code"] = (reasons["unknown_code"] || 0) + 1;
+            return { __row: idx + 1, __status: "error", __reason: "كود غير موجود في الماستر", code, datetime: iso };
+          }
+          accepted += 1;
+          staging.push({ employeeCode: code, punchDatetime: format(parsed, "yyyy-MM-dd'T'HH:mm:ss"), __row: idx + 1 });
+          return { __row: idx + 1, __status: "ok", __reason: "", code, datetime: iso };
+        });
+
+        setImportLog({ accepted, rejected, reasons });
+        setPunchStaging(staging);
+        setPreviewData(mappedPreview.slice(0, 50));
+        toast({ title: "تم تجهيز المعاينة", description: `تم قراءة ${allRows.length} سطر (مع دمج الملفات)` });
+        return;
       }
-    };
-    reader.readAsBinaryString(file);
+
+      // Employees (single file)
+      const data = await readXlsxFile(files[0]);
+      if (data.length === 0) {
+        toast({ title: "تنبيه", description: "الملف فارغ", variant: "destructive" });
+        return;
+      }
+      setDetectedColumns(Object.keys(data[0] || {}));
+      setPreviewData(data);
+      toast({ title: "تم قراءة الملف", description: `تم العثور على ${data.length} سجل` });
+    } catch (err: any) {
+      toast({ title: "خطأ في قراءة الملف", description: err?.message || "فشل قراءة الملف", variant: "destructive" });
+    }
   };
 
   const handleImport = async () => {
@@ -198,44 +279,12 @@ export default function Import() {
         if (mapped.length === 0) throw new Error("لم يتم العثور على بيانات موظفين صالحة. تأكد من وجود أعمدة (كود، الاسم)");
         await importEmployees.mutateAsync(mapped);
       } else {
-        const mapped = previewData.map((row: any) => {
-          // Normalize row keys to handle Arabic characters and common variations
-          const normalizedRow: any = {};
-          Object.keys(row).forEach(key => {
-            const normalizedKey = key.trim().replace(/\s+/g, '_');
-            normalizedRow[normalizedKey] = row[key];
-          });
-
-          // Try to find employee code
-          const employeeCode = normalizeEmployeeCode(
-            row['كود'] || row['ID'] || row['Code'] || row['الكود'] || 
-            normalizedRow['كود'] || normalizedRow['الكود'] || 
-            row['id'] || row['Employee ID'] || ""
-          );
-          
-          // Try to find date/time
-          const rawDate = 
-            row['التاريخ_والوقت'] || row['التاريخ والوقت'] || row['التاريخ_والوقت'] ||
-            normalizedRow['التاريخ_والوقت'] || normalizedRow['التاريخ_والوقت'] ||
-            row['Punch Datetime'] || row['Clock In'] || row['Date'] || 
-            row['Time'] || row['date'] || row['time'] || 
-            row['التاريخ'] || row['الوقت'] || row['التاريخ_والوقت'];
-          
-          const punchDatetime = parsePunchDate(rawDate);
-          
-          return {
-            employeeCode,
-            punchDatetime: punchDatetime ? format(punchDatetime, "yyyy-MM-dd'T'HH:mm:ss") : "",
-          };
-        }).filter(p => p.employeeCode && p.punchDatetime);
-
-        if (mapped.length === 0) {
-          console.error("Mapping failed. First row keys:", Object.keys(previewData[0]));
-          throw new Error("لم يتم العثور على سجلات بصمة صالحة. تأكد من وجود أعمدة (كود، التاريخ_والوقت)");
+        if (punchStaging.length === 0) {
+          throw new Error("لا توجد سجلات بصمة صالحة للاستيراد. تأكد من معاينة الملف أولاً.");
         }
-        await importPunches.mutateAsync(mapped);
+        await importPunches.mutateAsync(punchStaging.map(({ __row, __reason, ...p }) => p));
 
-        const punchDates = mapped
+        const punchDates = punchStaging
           .map(p => new Date(p.punchDatetime))
           .filter(date => !Number.isNaN(date.getTime()));
 
@@ -249,13 +298,15 @@ export default function Import() {
           await processAttendance.mutateAsync({
             startDate: startRange,
             endDate: endRange,
-            employeeCodes: Array.from(new Set(mapped.map((row) => row.employeeCode))),
+            employeeCodes: Array.from(new Set(punchStaging.map((row) => row.employeeCode))),
           });
         }
       }
       
       toast({ title: "نجاح", description: "تم استيراد البيانات بنجاح" });
       setPreviewData([]);
+      setPunchStaging([]);
+      setImportLog(null);
     } catch (err: any) {
       toast({ title: "فشل الاستيراد", description: err.message, variant: "destructive" });
     } finally {
@@ -278,7 +329,17 @@ export default function Import() {
               <h3 className="text-xl font-bold font-display mb-2">رفع ملف إكسل</h3>
               <p className="text-muted-foreground mb-8">قم بسحب وإفلات الملف هنا، أو انقر للاختيار من جهازك</p>
               
-              <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v); setPreviewData([]); }} className="w-full max-w-md mx-auto mb-8">
+              <Tabs
+                value={activeTab}
+                onValueChange={(v) => {
+                  setActiveTab(v);
+                  setPreviewData([]);
+                  setImportLog(null);
+                  setDetectedColumns([]);
+                  setPunchStaging([]);
+                }}
+                className="w-full max-w-md mx-auto mb-8"
+              >
                 <TabsList className="grid w-full grid-cols-2">
                   <TabsTrigger value="employees">بيانات الموظفين</TabsTrigger>
                   <TabsTrigger value="punches">سجلات البصمة</TabsTrigger>
@@ -289,6 +350,7 @@ export default function Import() {
                 <input
                   type="file"
                   accept=".xlsx, .xls"
+                  multiple={activeTab === "punches"}
                   onChange={handleFileUpload}
                   className="block w-full text-sm text-slate-500
                     file:mr-4 file:py-2 file:px-4
@@ -360,36 +422,80 @@ export default function Import() {
                 <div className="p-4 border-b border-border/50 flex items-center justify-between bg-slate-50">
                   <div className="flex items-center gap-2">
                     <FileType className="w-5 h-5 text-emerald-600" />
-                    <span className="font-bold">معاينة البيانات ({previewData.length} سجل)</span>
+                    <span className="font-bold">معاينة البيانات</span>
                   </div>
                   <Button onClick={handleImport} disabled={isProcessing} className="gap-2">
                     {isProcessing ? "جاري الاستيراد..." : "تأكيد الاستيراد"}
                     <CheckCircle className="w-4 h-4" />
                   </Button>
                 </div>
-                <div className="max-h-[400px] overflow-auto">
-                  <table className="w-full text-sm text-right">
-                    <thead className="bg-slate-100 sticky top-0">
-                      <tr>
-                        {Object.keys(previewData[0]).map((key) => (
-                          <th key={key} className="px-6 py-3 font-medium text-slate-600">{key}</th>
+                {(detectedColumns.length > 0 || importLog) && (
+                  <div className="p-4 border-b border-border/50 bg-white space-y-2 text-sm">
+                    {activeTab === "punches" && importLog && (
+                      <div className="flex flex-wrap gap-3">
+                        <span className="px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          مقبول: {importLog.accepted}
+                        </span>
+                        <span className="px-3 py-1 rounded-full bg-red-50 text-red-700 border border-red-200">
+                          مرفوض: {importLog.rejected}
+                        </span>
+                        {Object.entries(importLog.reasons).map(([k, v]) => (
+                          <span key={k} className="px-3 py-1 rounded-full bg-slate-50 text-slate-700 border border-slate-200">
+                            {k}: {v}
+                          </span>
                         ))}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border/50">
-                      {previewData.slice(0, 10).map((row, i) => (
-                        <tr key={i}>
-                          {Object.values(row).map((val: any, j) => (
-                            <td key={j} className="px-6 py-3 text-slate-600">{String(val)}</td>
+                      </div>
+                    )}
+                    {detectedColumns.length > 0 && (
+                      <div className="text-muted-foreground">
+                        الأعمدة المتعرّف عليها: {detectedColumns.join(" · ")}
+                      </div>
+                    )}
+                  </div>
+                )}
+                <div className="max-h-[400px] overflow-auto">
+                  {activeTab === "punches" ? (
+                    <table className="w-full text-sm text-right">
+                      <thead className="bg-slate-100 sticky top-0">
+                        <tr>
+                          <th className="px-4 py-3">#</th>
+                          <th className="px-4 py-3">الحالة</th>
+                          <th className="px-4 py-3">السبب</th>
+                          <th className="px-4 py-3">الكود</th>
+                          <th className="px-4 py-3">التاريخ/الوقت</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border/50">
+                        {previewData.map((row: any, i) => (
+                          <tr key={i} className={row.__status === "error" ? "bg-red-50/40" : "bg-emerald-50/30"}>
+                            <td className="px-4 py-3 font-mono text-xs">{row.__row}</td>
+                            <td className="px-4 py-3 font-semibold">{row.__status === "error" ? "مرفوض" : "مقبول"}</td>
+                            <td className="px-4 py-3 text-slate-700">{row.__reason || "-"}</td>
+                            <td className="px-4 py-3 font-mono">{row.code}</td>
+                            <td className="px-4 py-3 font-mono">{row.datetime}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <table className="w-full text-sm text-right">
+                      <thead className="bg-slate-100 sticky top-0">
+                        <tr>
+                          {Object.keys(previewData[0]).map((key) => (
+                            <th key={key} className="px-6 py-3 font-medium text-slate-600">{key}</th>
                           ))}
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {previewData.length > 10 && (
-                    <div className="p-4 text-center text-muted-foreground bg-slate-50 border-t border-border/50">
-                      ... والمزيد ({previewData.length - 10} سجل)
-                    </div>
+                      </thead>
+                      <tbody className="divide-y divide-border/50">
+                        {previewData.slice(0, 10).map((row, i) => (
+                          <tr key={i}>
+                            {Object.values(row).map((val: any, j) => (
+                              <td key={j} className="px-6 py-3 text-slate-600">{String(val)}</td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   )}
                 </div>
               </div>
