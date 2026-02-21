@@ -322,7 +322,7 @@ export default function Import() {
         
         <main className="flex-1 overflow-y-auto p-8">
           <div className="max-w-4xl mx-auto space-y-8">
-            <div className="bg-white rounded-2xl border border-border/50 shadow-sm p-8 text-center">
+            <div className="bg-card rounded-2xl border border-border/50 shadow-sm p-8 text-center">
               <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-6">
                 <Upload className="w-10 h-10 text-primary" />
               </div>
@@ -363,7 +363,7 @@ export default function Import() {
               </div>
             </div>
 
-            <div className="bg-white rounded-2xl border border-border/50 shadow-sm p-8 space-y-6">
+            <div className="bg-card rounded-2xl border border-border/50 shadow-sm p-8 space-y-6">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
                   <FileDown className="w-5 h-5 text-primary" />
@@ -418,8 +418,8 @@ export default function Import() {
             </div>
 
             {previewData.length > 0 && (
-              <div className="bg-white rounded-2xl border border-border/50 shadow-sm overflow-hidden">
-                <div className="p-4 border-b border-border/50 flex items-center justify-between bg-slate-50">
+              <div className="bg-card rounded-2xl border border-border/50 shadow-sm overflow-hidden">
+                <div className="p-4 border-b border-border/50 flex items-center justify-between bg-muted/40">
                   <div className="flex items-center gap-2">
                     <FileType className="w-5 h-5 text-emerald-600" />
                     <span className="font-bold">معاينة البيانات</span>
@@ -430,7 +430,7 @@ export default function Import() {
                   </Button>
                 </div>
                 {(detectedColumns.length > 0 || importLog) && (
-                  <div className="p-4 border-b border-border/50 bg-white space-y-2 text-sm">
+                  <div className="p-4 border-b border-border/50 bg-card space-y-2 text-sm">
                     {activeTab === "punches" && importLog && (
                       <div className="flex flex-wrap gap-3">
                         <span className="px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -440,7 +440,7 @@ export default function Import() {
                           مرفوض: {importLog.rejected}
                         </span>
                         {Object.entries(importLog.reasons).map(([k, v]) => (
-                          <span key={k} className="px-3 py-1 rounded-full bg-slate-50 text-slate-700 border border-slate-200">
+                          <span key={k} className="px-3 py-1 rounded-full bg-muted/40 text-slate-700 border border-slate-200">
                             {k}: {v}
                           </span>
                         ))}

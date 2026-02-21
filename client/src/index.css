@@ -39,44 +39,68 @@
   /* Font Variables */
   --font-sans: 'Cairo', sans-serif;
   --font-display: 'Tajawal', sans-serif;
+
+  /* Optional tokens used by some UI components */
+  --card-border: 214 32% 91%;
+  --popover-border: 214 32% 91%;
+
+  --sidebar: 0 0% 100%;
+  --sidebar-foreground: 222 47% 11%;
+  --sidebar-border: 214 32% 91%;
+  --sidebar-ring: 221 83% 53%;
+  --sidebar-primary: 221 83% 53%;
+  --sidebar-primary-foreground: 210 40% 98%;
+  --sidebar-accent: 210 40% 96%;
+  --sidebar-accent-foreground: 222 47% 11%;
 }
 
-/* Dark theme overrides (activated via .dark on <html>) */
 .dark {
-  --background: 222 47% 7%;
+  --background: 222 47% 11%;
   --foreground: 210 40% 98%;
 
-  --card: 222 47% 9%;
+  --card: 222 47% 13%;
   --card-foreground: 210 40% 98%;
 
-  --popover: 222 47% 9%;
+  --popover: 222 47% 13%;
   --popover-foreground: 210 40% 98%;
 
-  --primary: 221 83% 62%;
-  --primary-foreground: 222 47% 9%;
+  --primary: 221 83% 60%;
+  --primary-foreground: 222 47% 11%;
 
-  --secondary: 217 32% 17%;
+  --secondary: 217 33% 17%;
   --secondary-foreground: 210 40% 98%;
 
-  --muted: 217 32% 17%;
+  --muted: 217 33% 17%;
   --muted-foreground: 215 20% 70%;
 
-  --accent: 217 32% 17%;
+  --accent: 217 33% 17%;
   --accent-foreground: 210 40% 98%;
 
-  --destructive: 0 84% 60%;
+  --destructive: 0 62% 45%;
   --destructive-foreground: 210 40% 98%;
 
-  --border: 217 32% 22%;
-  --input: 217 32% 22%;
-  --ring: 221 83% 62%;
+  --border: 217 33% 20%;
+  --input: 217 33% 20%;
+  --ring: 221 83% 60%;
+
+  --card-border: 217 33% 20%;
+  --popover-border: 217 33% 20%;
+
+  --sidebar: 222 47% 12%;
+  --sidebar-foreground: 210 40% 98%;
+  --sidebar-border: 217 33% 20%;
+  --sidebar-ring: 221 83% 60%;
+  --sidebar-primary: 221 83% 60%;
+  --sidebar-primary-foreground: 222 47% 11%;
+  --sidebar-accent: 217 33% 17%;
+  --sidebar-accent-foreground: 210 40% 98%;
 }
 
 @layer base {
   * {
     @apply border-border;
   }
-  
+
   html {
     direction: rtl; /* Force RTL for Arabic UI */
   }
@@ -97,9 +121,9 @@
   .rtl-flip {
     transform: scaleX(-1);
   }
-  
+
   .glass-card {
-    @apply bg-white/80 backdrop-blur-md border border-white/20 shadow-lg;
+    @apply bg-card/80 backdrop-blur-md border border-border/50 shadow-lg;
   }
 
   .text-gradient {
@@ -108,7 +132,7 @@
 }
 
 /* Status Indicators */
-.status-present { @apply text-emerald-600 bg-emerald-50 border-emerald-200; }
-.status-absent { @apply text-rose-600 bg-rose-50 border-rose-200; }
-.status-late { @apply text-amber-600 bg-amber-50 border-amber-200; }
-.status-excused { @apply text-blue-600 bg-blue-50 border-blue-200; }
+.status-present { @apply text-emerald-600 bg-emerald-50 border-emerald-200 dark:text-emerald-300 dark:bg-emerald-950/30 dark:border-emerald-900; }
+.status-absent { @apply text-rose-600 bg-rose-50 border-rose-200 dark:text-rose-300 dark:bg-rose-950/30 dark:border-rose-900; }
+.status-late { @apply text-amber-600 bg-amber-50 border-amber-200 dark:text-amber-300 dark:bg-amber-950/30 dark:border-amber-900; }
+.status-excused { @apply text-blue-600 bg-blue-50 border-blue-200 dark:text-blue-300 dark:bg-blue-950/30 dark:border-blue-900; }

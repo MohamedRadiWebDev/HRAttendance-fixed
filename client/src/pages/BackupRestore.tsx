@@ -291,7 +291,7 @@ export default function BackupRestore() {
   };
 
   return (
-    <div className="flex h-screen bg-slate-50/50">
+    <div className="flex h-screen bg-background">
       <Sidebar />
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header title="النسخ الاحتياطي والاستعادة" />
@@ -364,7 +364,7 @@ export default function BackupRestore() {
               </div>
 
               {restorePreview && (
-                <div className="space-y-3 border rounded-lg p-4 bg-slate-50/60">
+                <div className="space-y-3 border rounded-lg p-4 bg-muted/40/60">
                   <div className="text-sm text-muted-foreground">
                     تاريخ النسخة: {restorePreview.meta?.createdAt || "-"}
                   </div>

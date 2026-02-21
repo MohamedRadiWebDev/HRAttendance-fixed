@@ -13,15 +13,15 @@ interface StatCardProps {
 
 export function StatCard({ title, value, icon: Icon, trend, trendUp, className, color = "blue" }: StatCardProps) {
   const colorStyles = {
-    blue: "bg-blue-50 text-blue-600",
-    green: "bg-emerald-50 text-emerald-600",
-    red: "bg-rose-50 text-rose-600",
-    orange: "bg-amber-50 text-amber-600",
+    blue: "bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-300",
+    green: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300",
+    red: "bg-rose-50 text-rose-700 dark:bg-rose-950/30 dark:text-rose-300",
+    orange: "bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300",
   };
 
   return (
     <div className={cn(
-      "bg-white rounded-2xl p-6 border border-border/50 shadow-sm hover:shadow-md transition-all duration-300", 
+      "bg-card rounded-2xl p-6 border border-border/50 shadow-sm hover:shadow-md transition-all duration-300",
       className
     )}>
       <div className="flex items-start justify-between">
@@ -38,7 +38,9 @@ export function StatCard({ title, value, icon: Icon, trend, trendUp, className, 
         <div className="mt-4 flex items-center gap-2">
           <span className={cn(
             "text-xs font-bold px-2 py-0.5 rounded-full",
-            trendUp ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
+            trendUp
+              ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200"
+              : "bg-rose-100 text-rose-800 dark:bg-rose-950/30 dark:text-rose-200"
           )}>
             {trend}
           </span>

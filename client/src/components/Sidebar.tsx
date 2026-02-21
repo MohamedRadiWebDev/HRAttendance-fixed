@@ -32,8 +32,8 @@ export function Sidebar() {
   const [location] = useLocation();
 
   return (
-    <div className="flex flex-col h-full bg-white border-l border-border/50 shadow-sm w-72">
-      <div className="p-6 border-b border-border/50">
+    <div className="flex flex-col h-full bg-sidebar text-sidebar-foreground border-l border-sidebar-border/60 shadow-sm w-72">
+      <div className="p-6 border-b border-sidebar-border/60">
         <h1 className="text-2xl font-display font-bold text-primary flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
             <CalendarCheck className="w-5 h-5 text-primary" />
@@ -52,7 +52,7 @@ export function Sidebar() {
                   "flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 cursor-pointer group font-medium",
                   isActive
                     ? "bg-primary text-primary-foreground shadow-md shadow-primary/20"
-                    : "text-muted-foreground hover:bg-slate-50 hover:text-foreground"
+                    : "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
                 )}
               >
                 <item.icon className={cn("w-5 h-5", isActive ? "text-primary-foreground" : "text-muted-foreground group-hover:text-primary")} />
@@ -63,8 +63,8 @@ export function Sidebar() {
         })}
       </nav>
 
-      <div className="p-4 border-t border-border/50">
-        <div className="bg-slate-50 rounded-xl p-4 border border-border/50">
+      <div className="p-4 border-t border-sidebar-border/60">
+        <div className="bg-sidebar-accent/60 rounded-xl p-4 border border-sidebar-border/60">
           <p className="text-xs text-muted-foreground text-center">الإصدار 1.0.0 &copy; 2024</p>
         </div>
       </div>

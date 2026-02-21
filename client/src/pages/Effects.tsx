@@ -114,7 +114,7 @@ export default function Effects() {
         <Header title="المؤثرات" />
         <main className="flex-1 min-w-0 overflow-y-auto">
           <div className="p-4 md:p-6 lg:p-8 max-w-7xl mx-auto space-y-6">
-            <div className="rounded-2xl border bg-white p-4 space-y-4">
+            <div className="rounded-2xl border bg-card p-4 space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
                 <Input placeholder="بحث بالكود/الاسم/النوع" value={search} onChange={(e) => setSearch(e.target.value)} />
                 <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
@@ -160,10 +160,10 @@ export default function Effects() {
               )}
             </div>
 
-            <div className="rounded-2xl border bg-white overflow-hidden">
+            <div className="rounded-2xl border bg-card overflow-hidden">
               <div className="max-h-[70vh] overflow-auto">
                 <table className="w-full text-xs min-w-[1200px]">
-                  <thead className="sticky top-0 bg-white">
+                  <thead className="sticky top-0 bg-card">
                     <tr>
                       <th className="px-3 py-2">التاريخ</th><th className="px-3 py-2">اليوم</th><th className="px-3 py-2">الكود</th><th className="px-3 py-2">الاسم</th><th className="px-3 py-2">النوع</th><th className="px-3 py-2">من</th><th className="px-3 py-2">إلى</th><th className="px-3 py-2">الحالة</th><th className="px-3 py-2">ملاحظة</th><th className="px-3 py-2">المصدر</th><th className="px-3 py-2">إجراءات</th>
                     </tr>

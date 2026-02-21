@@ -29,7 +29,7 @@ export default function Adjustments() {
   );
 
   return (
-    <div className="flex h-screen bg-slate-50/50">
+    <div className="flex h-screen bg-background">
       <Sidebar />
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header title="التسويات والإجازات" />
@@ -51,9 +51,9 @@ export default function Adjustments() {
               </div>
             </div>
 
-            <div className="bg-white rounded-2xl border border-border/50 shadow-sm overflow-hidden">
+            <div className="bg-card rounded-2xl border border-border/50 shadow-sm overflow-hidden">
               <table className="w-full text-right">
-                <thead className="bg-slate-50 border-b border-border/50">
+                <thead className="bg-muted/40 border-b border-border/50">
                   <tr>
                     <th className="px-6 py-4 font-bold text-slate-600">كود الموظف</th>
                     <th className="px-6 py-4 font-bold text-slate-600">النوع</th>
@@ -69,11 +69,11 @@ export default function Adjustments() {
                   {isLoading ? (
                     Array(5).fill(0).map((_, i) => (
                       <tr key={i} className="animate-pulse">
-                        <td colSpan={8} className="px-6 py-4 h-12 bg-slate-50/50"></td>
+                        <td colSpan={8} className="px-6 py-4 h-12 bg-background"></td>
                       </tr>
                     ))
                   ) : filteredAdjustments?.map((adj) => (
-                    <tr key={adj.id} className="hover:bg-slate-50/50 transition-colors">
+                    <tr key={adj.id} className="hover:bg-background transition-colors">
                       <td className="px-6 py-4 font-medium">
                         <div className="flex flex-col">
                           <span className="font-mono">{adj.employeeCode}</span>

@@ -13,7 +13,7 @@ type Props = {
   onOpenChange: (open: boolean) => void;
   employeeCode: string;
   employeeName?: string;
-  defaultDate: string;
+  defaultDate: string; // YYYY-MM-DD
 };
 
 const needsTimeRange = (type: string) => type === "مأمورية" || type === "اذن صباحي" || type === "اذن مسائي";
@@ -27,14 +27,7 @@ export function QuickAddEffectDialog({ open, onOpenChange, employeeCode, employe
   const [toTime, setToTime] = useState<string>("13:00");
   const [note, setNote] = useState<string>("");
 
-  const target = useMemo(() => {
-    const code = String(employeeCode || "").trim();
-    const date = String(defaultDate || "").trim();
-    if (!code || !date) return null;
-    return { code, name: employeeName, date };
-  }, [employeeCode, employeeName, defaultDate]);
-
-  const isOpen = open && !!target;
+  const isOpen = open && !!employeeCode && !!defaultDate;
 
   useEffect(() => {
     if (!isOpen) return;
@@ -45,17 +38,19 @@ export function QuickAddEffectDialog({ open, onOpenChange, employeeCode, employe
   }, [isOpen]);
 
   const title = useMemo(() => {
-    if (!target) return "إضافة مؤثر";
-    return `إضافة مؤثر للموظف ${target.name || ""} (${target.code})`;
-  }, [target]);
+    const namePart = employeeName ? ` ${employeeName}` : "";
+    return `إضافة مؤثر للموظف${namePart} (${employeeCode})`;
+  }, [employeeCode, employeeName]);
 
   const submit = () => {
-    if (!target) return;
+    if (!employeeCode || !defaultDate) return;
+
     const trimmedType = String(type || "").trim();
     if (!trimmedType) {
       toast({ title: "تعذر الإضافة", description: "اختر نوع المؤثر.", variant: "destructive" });
       return;
     }
+
     if (needsTimeRange(trimmedType) && (!fromTime.trim() || !toTime.trim())) {
       toast({ title: "تعذر الإضافة", description: "هذا المؤثر يتطلب من/إلى.", variant: "destructive" });
       return;
@@ -63,9 +58,9 @@ export function QuickAddEffectDialog({ open, onOpenChange, employeeCode, employe
 
     const stats = upsertEffects([
       {
-        employeeCode: target.code,
-        employeeName: target.name,
-        date: target.date,
+        employeeCode,
+        employeeName,
+        date: defaultDate,
         type: trimmedType,
         fromTime: needsTimeRange(trimmedType) ? fromTime.trim() : undefined,
         toTime: needsTimeRange(trimmedType) ? toTime.trim() : undefined,
@@ -79,6 +74,7 @@ export function QuickAddEffectDialog({ open, onOpenChange, employeeCode, employe
       title: "تمت الإضافة",
       description: `تم حفظ المؤثر (جديد: ${stats.inserted}، تحديث: ${stats.updated}).`,
     });
+
     onOpenChange(false);
   };
 

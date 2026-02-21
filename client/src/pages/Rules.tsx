@@ -194,7 +194,7 @@ export default function Rules() {
   };
 
   return (
-    <div className="flex h-screen bg-slate-50/50">
+    <div className="flex h-screen bg-background">
       <Sidebar />
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header title="القواعد والورديات" />
@@ -692,7 +692,7 @@ function AddRuleDialog({ rule }: { rule?: SpecialRule }) {
             />
 
             {form.watch("ruleType") === "custom_shift" && (
-              <div className="grid grid-cols-2 gap-4 border p-3 rounded-lg bg-slate-50">
+              <div className="grid grid-cols-2 gap-4 border p-3 rounded-lg bg-muted/40">
                 <div className="space-y-2">
                   <label className="text-xs font-bold">بداية الوردية</label>
                   <Input

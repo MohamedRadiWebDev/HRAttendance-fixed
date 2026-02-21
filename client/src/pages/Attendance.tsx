@@ -36,23 +36,7 @@ export default function Attendance() {
   const hasInitialized = useRef(false);
   
   const [page, setPage] = useState(1);
-  const [limit, setLimit] = useState<number>(100);
-
-  // If user arrived from global search (or a deep link) we accept ?employee=CODE
-  useEffect(() => {
-    try {
-      const u = new URL(window.location.href);
-      const code = (u.searchParams.get("employee") || "").trim();
-      if (code) {
-        setEmployeeFilter(code);
-        setActiveTab("detail");
-        setPage(1);
-      }
-    } catch {
-      // ignore
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location]);
+  const limit = 50;
   
   const { data: recordsData, isLoading } = useAttendanceRecords(dateRange.start, dateRange.end, employeeFilter, page, limit, false);
   const records = recordsData?.data;
@@ -241,7 +225,7 @@ export default function Attendance() {
     if (isMissing) return "bg-orange-50/60 hover:bg-orange-50 dark:bg-orange-950/25 dark:hover:bg-orange-950/35";
     if (isLateOrEarly) return "bg-yellow-50/60 hover:bg-yellow-50 dark:bg-yellow-950/25 dark:hover:bg-yellow-950/35";
     if (isComp) return "bg-emerald-50/60 hover:bg-emerald-50 dark:bg-emerald-950/25 dark:hover:bg-emerald-950/35";
-    return "hover:bg-slate-50/50 dark:hover:bg-slate-900/40";
+    return "hover:bg-background dark:hover:bg-muted/40";
   };
 
   const explainReasons = (record: any) => {
@@ -330,6 +314,32 @@ export default function Attendance() {
   };
   const handleExport = async () => {
     if (!records || records.length === 0) return;
+
+    // Pre-export validation (warnings only — export can continue)
+    try {
+      const warnings: string[] = [];
+      const codes = (employees || []).map((e) => String(e.code || "").trim()).filter(Boolean);
+      const dup = codes.filter((c, i) => codes.indexOf(c) !== i);
+      if (dup.length) warnings.push(`يوجد أكواد مكررة في الماستر (${Array.from(new Set(dup)).slice(0, 5).join(", ")}${dup.length > 5 ? "…" : ""}).`);
+
+      const missingHire = (employees || []).filter((e: any) => !String(e?.hireDate || e?.hire_date || "").trim());
+      if (missingHire.length) warnings.push(`يوجد موظفون بدون تاريخ تعيين (${missingHire.length}).`);
+
+      const unknownInRecords = (records || []).filter((r: any) => !codes.includes(String(r.employeeCode || "").trim()));
+      if (unknownInRecords.length) warnings.push(`يوجد سجلات لكود غير موجود في الماستر (${unknownInRecords.length}).`);
+
+      const has1970 = (records || []).some((r: any) => String(r.date || "").includes("1970"));
+      if (has1970) warnings.push("تم اكتشاف تاريخ غير صالح (1970) في بعض السجلات.");
+
+      if (warnings.length) {
+        toast({
+          title: "تنبيه قبل التصدير",
+          description: warnings.slice(0, 3).join(" "),
+        });
+      }
+    } catch {
+      // ignore
+    }
     const { detailHeaders, detailRows, summaryHeaders, summaryRows } = buildAttendanceExportRows({
       records,
       employees: employees || [],
@@ -375,6 +385,9 @@ export default function Attendance() {
       workbook.creator = "HR Attendance";
       workbook.created = new Date();
 
+      const generatedAt = new Date();
+      const generatedAtText = generatedAt.toISOString().replace("T", " ").slice(0, 19);
+
       const applySheet = (
         name: string,
         headers: string[],
@@ -414,7 +427,7 @@ export default function Attendance() {
 
         const dateCols = ["التاريخ", "تاريخ التعيين", "تاريخ ترك العمل"].map(getCol).filter((c) => c > 0);
         const timeCols = ["الدخول", "الخروج"].map(getCol).filter((c) => c > 0);
-        const hourCols = ["ساعات العمل", "الإضافي", "إجمالي الإضافي"].map(getCol).filter((c) => c > 0);
+        const hourCols = ["ساعات العمل", "الإضافي"].map(getCol).filter((c) => c > 0);
 
         for (let r = 2; r <= lastRow; r++) {
           const row = ws.getRow(r);
@@ -503,35 +516,44 @@ export default function Attendance() {
         return ws;
       };
 
-      // Add an extra column (at the very end) for total overtime in Summary.
-      // We intentionally append it LAST to avoid shifting any existing columns/formulas.
-      const summaryHeadersExt = [...summaryHeaders, "إجمالي الإضافي"];
-
-      const overtimeByCode = new Map<string, number>();
-      try {
-        const idxCode = detailHeaders.indexOf("الكود");
-        const idxOt = detailHeaders.indexOf("الإضافي");
-        if (idxCode >= 0 && idxOt >= 0) {
-          for (const row of detailRows) {
-            const code = String(row[idxCode] ?? "").trim();
-            const ot = Number(row[idxOt] ?? 0);
-            if (!code) continue;
-            if (!Number.isFinite(ot)) continue;
-            overtimeByCode.set(code, (overtimeByCode.get(code) || 0) + ot);
-          }
-        }
-      } catch {
-        // ignore; overtime stays blank
-      }
-
-      const summaryRowsExt = summaryRows.map((row) => {
-        const code = String(row[0] ?? "").trim();
-        const totalOt = overtimeByCode.get(code) || 0;
-        return [...row, totalOt];
-      });
-
       const wsDetail = applySheet("تفصيلي", detailHeaders, detailRows, { xSplit: 4 });
-      const wsSummary = applySheet("ملخص", summaryHeadersExt, summaryRowsExt, { xSplit: 2 });
+      const wsSummary = applySheet("ملخص", summaryHeaders, summaryRows, { xSplit: 2 });
+
+      // Audit / Logs sheet 🧾
+      const wsAudit = workbook.addWorksheet("سجل", {
+        views: [{ state: "frozen", ySplit: 1, xSplit: 0, rightToLeft: true }],
+      });
+      wsAudit.addRow(["البند", "القيمة"]);
+      wsAudit.addRows([
+        ["تاريخ إنشاء التقرير", generatedAtText],
+        ["الفترة", `${dateRange.start || ""} → ${dateRange.end || ""}`],
+        ["عدد الموظفين", (employees || []).length],
+        ["عدد السجلات", (records || []).length],
+        ["Generated by", "HR Attendance System"],
+      ]);
+      wsAudit.getRow(1).eachCell((cell: any) => {
+        cell.font = { bold: true };
+        cell.alignment = { vertical: "middle", horizontal: "center" };
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEEF2FF" } };
+        cell.border = {
+          top: { style: "thin", color: { argb: "FFD0D7E2" } },
+          left: { style: "thin", color: { argb: "FFD0D7E2" } },
+          bottom: { style: "thin", color: { argb: "FFD0D7E2" } },
+          right: { style: "thin", color: { argb: "FFD0D7E2" } },
+        };
+      });
+      wsAudit.columns = [{ width: 28 }, { width: 60 }];
+
+      // Footer on all sheets
+      const footerText = `Generated by HR Attendance System - ${generatedAtText}`;
+      [wsDetail, wsSummary, wsAudit].forEach((ws: any) => {
+        try {
+          ws.headerFooter = ws.headerFooter || {};
+          ws.headerFooter.oddFooter = `&C${footerText}`;
+        } catch {
+          // ignore
+        }
+      });
 
       // Optional: write formulas in Summary so totals stay consistent even after manual edits.
       // We only set formulas for numeric aggregations that are safe SUMIFs.
@@ -539,7 +561,7 @@ export default function Attendance() {
         const detailHeaderIndex = new Map<string, string>();
         detailHeaders.forEach((h, i) => detailHeaderIndex.set(h, wsDetail.getColumn(i + 1).letter));
         const sumHeaderIndex = new Map<string, number>();
-        summaryHeadersExt.forEach((h, i) => sumHeaderIndex.set(h, i + 1));
+        summaryHeaders.forEach((h, i) => sumHeaderIndex.set(h, i + 1));
 
         const codeColLetter = detailHeaderIndex.get("الكود") || "C";
 
@@ -556,8 +578,7 @@ export default function Attendance() {
           }
         };
 
-        // IMPORTANT: Joining / Termination period should remain plain values (no formulas)
-        // as requested (these are business-period counters, not sums after manual edits).
+        // Keep Joining / Termination period as computed values (no formulas)
 
         // Penalties totals
         sumif("تأخير", "إجمالي التأخيرات");
@@ -565,6 +586,9 @@ export default function Attendance() {
         sumif("سهو بصمة", "إجمالي سهو البصمة");
         sumif("غياب", "إجمالي الغياب");
         sumif("إجمالي الجزاءات", "إجمالي الجزاءات");
+
+        // Overtime total
+        sumif("الإضافي", "إجمالي الإضافي");
 
         // Keep Summary "ملاحظات" empty for manual user notes.
         const notesCol = sumHeaderIndex.get("ملاحظات");
@@ -606,7 +630,7 @@ export default function Attendance() {
           <div className="bg-card rounded-2xl border border-border/50 shadow-sm overflow-hidden flex flex-col h-full">
             <div className="p-6 border-b border-border/50 flex flex-col sm:flex-row items-center justify-between gap-4 sticky top-0 z-20 bg-background/90 backdrop-blur">
               <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2 bg-slate-50 border border-border rounded-lg p-1">
+                <div className="flex items-center gap-2 bg-muted/40 border border-border rounded-lg p-1">
                   <Input 
                     type="text"
                     placeholder="dd/mm/yyyy"
@@ -653,36 +677,11 @@ export default function Attendance() {
                     placeholder="مثال: 101, 102, 105" 
                     className="pr-10 h-10"
                     value={employeeFilter} 
-                    onChange={(e) => {
-                      setEmployeeFilter(e.target.value);
-                      setPage(1);
-                    }} 
+                    onChange={(e) => setEmployeeFilter(e.target.value)} 
                   />
                 </div>
               </div>
-
-              <div className="space-y-2 min-w-[160px]">
-                <label className="text-sm font-medium">حجم الصفحة</label>
-                <Select
-                  value={String(limit)}
-                  onValueChange={(v) => {
-                    const next = Number(v);
-                    setLimit(Number.isFinite(next) ? next : 100);
-                    setPage(1);
-                  }}
-                >
-                  <SelectTrigger className="w-[160px] h-10">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="50">50</SelectItem>
-                    <SelectItem value="100">100</SelectItem>
-                    <SelectItem value="200">200</SelectItem>
-                    <SelectItem value="0">كل النتائج</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-                <Select value={sectorFilter} onValueChange={(v) => { setSectorFilter(v); setPage(1);} }>
+                <Select value={sectorFilter} onValueChange={setSectorFilter}>
                   <SelectTrigger className="w-[180px] h-10">
                     <SelectValue placeholder="القطاع" />
                   </SelectTrigger>
@@ -722,7 +721,7 @@ export default function Attendance() {
               </div>
             </div>
 
-            <div className="px-6 py-3 border-b border-border/50 bg-slate-50/30">
+            <div className="px-6 py-3 border-b border-border/50 bg-muted/40/30">
               <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} dir="rtl">
                 <TabsList className="grid grid-cols-3 w-full sm:w-[420px]">
                   <TabsTrigger value="detail">تفصيلي</TabsTrigger>
@@ -732,7 +731,7 @@ export default function Attendance() {
               </Tabs>
             </div>
 
-            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/40 p-3 text-xs text-slate-700">
+            <div className="rounded-xl border border-dashed border-slate-300 bg-muted/40/40 p-3 text-xs text-slate-700">
               <div className="flex items-center justify-between">
                 <span className="font-semibold">تشخيص المؤثرات</span>
                 <Button variant="ghost" size="sm" onClick={() => setShowEffectsDebug((v) => !v)}>{showEffectsDebug ? "إخفاء" : "إظهار"}</Button>
@@ -752,7 +751,7 @@ export default function Attendance() {
                   <div className="p-6 text-center text-muted-foreground">يرجى تحديد الفترة أولاً لعرض الملخص.</div>
                 ) : (
                   <table className="w-full text-sm text-right min-w-[1100px]">
-                    <thead className="bg-slate-50 text-muted-foreground font-medium sticky top-0 z-10 shadow-sm">
+                    <thead className="bg-muted/40 text-muted-foreground font-medium sticky top-0 z-10 shadow-sm">
                       <tr>
                         {summaryTable.summaryHeaders.map((h) => (
                           <th key={h} className="px-4 py-3 whitespace-nowrap">{h}</th>
@@ -761,7 +760,7 @@ export default function Attendance() {
                     </thead>
                     <tbody className="divide-y divide-border/50">
                       {summaryTable.summaryRows.map((row, idx) => (
-                        <tr key={idx} className="hover:bg-slate-50/50">
+                        <tr key={idx} className="hover:bg-background">
                           {row.map((cell, cidx) => (
                             <td key={cidx} className="px-4 py-3 whitespace-nowrap">{String(cell ?? "")}</td>
                           ))}
@@ -775,7 +774,7 @@ export default function Attendance() {
               <>
             <div className="flex-1 overflow-auto" style={{ maxHeight: desktopViewportHeight }} onScroll={(e) => setDesktopScrollTop((e.currentTarget as HTMLDivElement).scrollTop)}>
               <table className="w-full text-sm text-right min-w-[1100px] hidden md:table">
-                <thead className="bg-slate-50 text-muted-foreground font-medium sticky top-0 z-10 shadow-sm">
+                <thead className="bg-muted/40 text-muted-foreground font-medium sticky top-0 z-10 shadow-sm">
                   <tr>
                     <th className="px-6 py-4">التاريخ</th>
                     <th className="px-6 py-4">الموظف</th>
@@ -952,7 +951,7 @@ export default function Attendance() {
                   <div className="text-center text-muted-foreground">لا توجد سجلات في هذه الفترة.</div>
                 ) : (
                   displayedRecords?.map((record: any) => (
-                    <div key={record.id} className="bg-white border border-border/50 rounded-xl p-4 shadow-sm space-y-2">
+                    <div key={record.id} className="bg-card border border-border/50 rounded-xl p-4 shadow-sm space-y-2">
                       <div className="flex items-center justify-between">
                         <span className="text-xs text-muted-foreground">{record.date}</span>
                         <StatusBadge status={record.status} />
@@ -1010,7 +1009,7 @@ export default function Attendance() {
               </div>
             </div>
             {limit > 0 && totalPages > 1 && (
-              <div className="p-4 border-t border-border/50 flex items-center justify-center gap-2 bg-background">
+              <div className="p-4 border-t border-border/50 flex items-center justify-center gap-2 bg-card">
                 <Button variant="outline" size="sm" disabled={page === 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
                   السابق
                 </Button>
@@ -1218,7 +1217,7 @@ function TimelineSheet({ record, employee, punches, adjustments, rules, onOpenCh
               <CardTitle className="text-base">خط الزمن</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="relative h-20 rounded-lg border border-border/50 bg-slate-50">
+              <div className="relative h-20 rounded-lg border border-border/50 bg-muted/40">
                 <div className="absolute inset-x-0 top-1/2 h-px bg-slate-200" />
                 {[0, 6, 12, 18, 24].map((hour) => {
                   const offset = ((hour * 3600) / (24 * 3600)) * 100;

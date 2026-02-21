@@ -77,7 +77,7 @@ export default function Employees() {
         
         <main className="flex-1 overflow-y-auto p-8">
           <div className="space-y-6">
-            <div className="bg-white rounded-2xl border border-border/50 shadow-sm p-6 space-y-4">
+            <div className="bg-card rounded-2xl border border-border/50 shadow-sm p-6 space-y-4">
               <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
                 <div className="relative w-full lg:w-72">
                   <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -145,10 +145,10 @@ export default function Employees() {
               </div>
             </div>
 
-            <div className="bg-white rounded-2xl border border-border/50 shadow-sm overflow-hidden">
+            <div className="bg-card rounded-2xl border border-border/50 shadow-sm overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm text-right hidden md:table">
-                  <thead className="bg-slate-50 text-muted-foreground font-medium sticky top-0 z-10">
+                  <thead className="bg-muted/40 text-muted-foreground font-medium sticky top-0 z-10">
                     <tr>
                       <th className="px-6 py-4">كود</th>
                       <th className="px-6 py-4">الاسم</th>
@@ -169,7 +169,7 @@ export default function Employees() {
                       filteredEmployees.map((employee) => (
                         <tr
                           key={employee.id}
-                          className="hover:bg-slate-50/50 transition-colors cursor-pointer"
+                          className="hover:bg-background transition-colors cursor-pointer"
                           onClick={() => setSelectedEmployee(employee)}
                         >
                           <td className="px-6 py-4 font-mono text-primary">{employee.code}</td>
@@ -196,7 +196,7 @@ export default function Employees() {
                     filteredEmployees.map((employee) => (
                       <div
                         key={employee.id}
-                        className="border border-border/50 rounded-xl p-4 space-y-3 bg-white hover:border-primary/40 transition-colors"
+                        className="border border-border/50 rounded-xl p-4 space-y-3 bg-card hover:border-primary/40 transition-colors"
                         onClick={() => setSelectedEmployee(employee)}
                       >
                         <div className="flex items-center justify-between gap-2">

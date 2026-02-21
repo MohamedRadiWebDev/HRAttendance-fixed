@@ -27,6 +27,7 @@ export const DETAIL_HEADERS = [
   "إجمالي الجزاءات",
   "ملاحظات",
   "مدير الإدارة",
+  "إجمالي الإضافي",
 ] as const;
 
 export const SUMMARY_HEADERS = [
@@ -47,6 +48,7 @@ export const SUMMARY_HEADERS = [
   "إجمالي الجزاءات",
   "ملاحظات",
   "مدير الإدارة",
+  "إجمالي الإضافي",
 ] as const;
 
 const toExcelDateSerial = (value: string) => {
@@ -196,6 +198,7 @@ export const buildAttendanceExportRows = ({
     early: number;
     missing: number;
     absenceDays: number;
+    overtimeHours: number;
     notes: string;
   }>();
 
@@ -285,6 +288,7 @@ export const buildAttendanceExportRows = ({
       early: 0,
       missing: 0,
       absenceDays: 0,
+      overtimeHours: 0,
       notes: "",
     };
 
@@ -292,6 +296,7 @@ export const buildAttendanceExportRows = ({
       existing.late += penaltiesByType.late;
       existing.early += penaltiesByType.early;
       existing.missing += penaltiesByType.missing;
+      existing.overtimeHours += Number(record.overtimeHours || 0);
       if (record.status === "Absent") existing.absenceDays += 1;
     }
     existing.compDaysFriday += Number(record.compDaysFriday || 0);
@@ -325,6 +330,7 @@ export const buildAttendanceExportRows = ({
       // Summary notes column is intended for manual notes by HR (do not auto-pull record notes).
       "ملاحظات": "",
       "مدير الإدارة": summary.manager,
+      "إجمالي الإضافي": summary.overtimeHours,
     };
   });
 

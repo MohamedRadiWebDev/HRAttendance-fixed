@@ -277,7 +277,7 @@ export default function Leaves() {
   };
 
   return (
-    <div className="flex h-screen bg-slate-50/50">
+    <div className="flex h-screen bg-background">
       <Sidebar />
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header title="إدارة الإجازات" />
@@ -291,7 +291,7 @@ export default function Leaves() {
               <TabsTrigger value="other">الإجازات الأخرى</TabsTrigger>
             </TabsList>
             <TabsContent value="official" className="space-y-6">
-              <div className="bg-white rounded-2xl border border-border/50 shadow-sm p-6 space-y-6">
+              <div className="bg-card rounded-2xl border border-border/50 shadow-sm p-6 space-y-6">
             <div className="flex flex-col md:flex-row md:items-end gap-4">
               <div className="flex-1 space-y-2">
                 <label className="text-sm font-medium">تاريخ الإجازة الرسمية</label>
@@ -314,7 +314,7 @@ export default function Leaves() {
 
             <div className="overflow-x-auto hidden md:block">
               <table className="w-full text-sm text-right">
-                <thead className="bg-slate-50 text-muted-foreground font-medium">
+                <thead className="bg-muted/40 text-muted-foreground font-medium">
                   <tr>
                     <th className="px-4 py-3">التاريخ</th>
                     <th className="px-4 py-3">الاسم</th>
@@ -380,7 +380,7 @@ export default function Leaves() {
               <div className="space-y-3">
                 <div className="overflow-x-auto hidden md:block">
                   <table className="w-full text-sm text-right">
-                    <thead className="bg-slate-50 text-muted-foreground font-medium">
+                    <thead className="bg-muted/40 text-muted-foreground font-medium">
                       <tr>
                         <th className="px-4 py-3">الكود</th>
                         <th className="px-4 py-3">الاسم</th>
@@ -458,7 +458,7 @@ export default function Leaves() {
               </div>
             </TabsContent>
             <TabsContent value="other" className="space-y-6">
-              <div className="bg-white rounded-2xl border border-border/50 shadow-sm p-6 space-y-4">
+              <div className="bg-card rounded-2xl border border-border/50 shadow-sm p-6 space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <Select value={form.type} onValueChange={(value) => setForm((prev) => ({ ...prev, type: value }))}>
                 <SelectTrigger>
@@ -526,7 +526,7 @@ export default function Leaves() {
               </div>
 
               {importPreview.length > 0 && (
-                <div className="bg-white rounded-2xl border border-border/50 shadow-sm p-6 space-y-4">
+                <div className="bg-card rounded-2xl border border-border/50 shadow-sm p-6 space-y-4">
               <h3 className="text-lg font-bold">تعيين أعمدة ملف الإجازات</h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <Select value={mapping.employeeCode} onValueChange={(value) => setMapping((prev) => ({ ...prev, employeeCode: value }))}>
@@ -583,7 +583,7 @@ export default function Leaves() {
               </div>
               <div className="overflow-x-auto border rounded-lg">
                 <table className="w-full text-sm text-right">
-                  <thead className="bg-slate-50 text-muted-foreground">
+                  <thead className="bg-muted/40 text-muted-foreground">
                     <tr>
                       {importHeaders.map((header) => (
                         <th key={header} className="px-3 py-2">{header}</th>
@@ -617,9 +617,9 @@ export default function Leaves() {
                 </div>
               )}
 
-              <div className="bg-white rounded-2xl border border-border/50 shadow-sm overflow-hidden">
+              <div className="bg-card rounded-2xl border border-border/50 shadow-sm overflow-hidden">
                 <table className="w-full text-sm text-right hidden md:table">
-                  <thead className="bg-slate-50 text-muted-foreground font-medium">
+                  <thead className="bg-muted/40 text-muted-foreground font-medium">
                     <tr>
                       <th className="px-4 py-3">النوع</th>
                       <th className="px-4 py-3">النطاق</th>

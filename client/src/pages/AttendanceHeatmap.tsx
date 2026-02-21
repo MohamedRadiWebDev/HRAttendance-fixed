@@ -73,7 +73,7 @@ const getStatusDisplay = (record?: AttendanceRecord | null) => {
 };
 
 const getCellStyle = (record?: AttendanceRecord | null) => {
-  if (!record) return "bg-slate-50 text-slate-400 border-slate-200";
+  if (!record) return "bg-muted/40 text-slate-400 border-slate-200";
   const penalties = Array.isArray(record.penalties) ? record.penalties : [];
   const hasAbsencePenalty = penalties.some((penalty: any) => String(penalty?.type).includes("غياب"));
 
@@ -173,7 +173,7 @@ export default function AttendanceHeatmap() {
   }, [filteredEmployees.length, scrollTop, viewportHeight]);
 
   return (
-    <div className="flex h-screen bg-slate-50/50">
+    <div className="flex h-screen bg-background">
       <Sidebar />
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header title="خريطة الحضور" />
@@ -275,9 +275,9 @@ export default function AttendanceHeatmap() {
                   <div className="text-center text-muted-foreground py-12">يرجى تحديد فترة صالحة أولاً.</div>
                 ) : (
                   <div className="border border-border/50 rounded-xl overflow-hidden">
-                    <div className="flex bg-slate-50 border-b border-border/50">
+                    <div className="flex bg-muted/40 border-b border-border/50">
                       <div
-                        className="sticky right-0 z-10 bg-slate-50 border-l border-border/50 flex items-center px-3 text-xs font-semibold text-muted-foreground"
+                        className="sticky right-0 z-10 bg-muted/40 border-l border-border/50 flex items-center px-3 text-xs font-semibold text-muted-foreground"
                         style={{ width: leftColumnWidth }}
                       >
                         الموظف
@@ -310,11 +310,11 @@ export default function AttendanceHeatmap() {
                           return (
                             <div
                               key={employee.code}
-                              className="flex items-center border-b border-border/40 bg-white"
+                              className="flex items-center border-b border-border/40 bg-card"
                               style={{ position: "absolute", top, left: 0, right: 0, height: rowHeight }}
                             >
                               <div
-                                className="sticky right-0 z-10 bg-white border-l border-border/50 px-3 flex flex-col justify-center"
+                                className="sticky right-0 z-10 bg-card border-l border-border/50 px-3 flex flex-col justify-center"
                                 style={{ width: leftColumnWidth }}
                               >
                                 <span className="text-xs font-semibold">{employee.nameAr}</span>

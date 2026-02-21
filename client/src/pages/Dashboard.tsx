@@ -3,9 +3,9 @@ import { Header } from "@/components/Header";
 import { StatCard } from "@/components/StatCard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, Clock, AlertTriangle, CheckCircle, Trash2 } from "lucide-react";
+import { Users, Clock, AlertTriangle, CalendarCheck, Trash2 } from "lucide-react";
 import { useAttendanceRecords } from "@/hooks/use-attendance";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useEmployees } from "@/hooks/use-employees";
 import { format, parse } from "date-fns";
 import { useEffect, useRef, useState } from "react";
@@ -20,8 +20,6 @@ import {
   restoreSerializablePunches,
 } from "@/backup/backupService";
 import { clearPersistedState, getLastSavedAt } from "@/store/persistence";
-
-const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444'];
 
 export default function Dashboard() {
   const { toast } = useToast();
@@ -98,32 +96,82 @@ export default function Dashboard() {
     }
   }, [dateRange]);
 
-  const todayRecords = (attendanceData as any)?.data || [];
-  const presentCount = todayRecords.filter((r: any) => r.status === "Present" || r.status === "Late").length;
-  const lateCount = todayRecords.filter((r: any) => r.status === "Late").length;
-  const absentCount = todayRecords.filter((r: any) => r.status === "Absent").length;
-  const excusedCount = todayRecords.filter((r: any) => r.status === "Excused").length;
+  const records = (attendanceData as any)?.data || [];
+
+  const safeDateMs = (iso?: string) => {
+    if (!iso) return null;
+    const d = new Date(iso);
+    return Number.isFinite(d.getTime()) ? d.getTime() : null;
+  };
+
+  const rangeDays = (() => {
+    const s = safeDateMs(dateRange.start);
+    const e = safeDateMs(dateRange.end);
+    if (s === null || e === null || e < s) return 0;
+    return Math.floor((e - s) / 86400000) + 1;
+  })();
+
+  const employeeDeptByCode = new Map<string, string>();
+  (allEmployees || []).forEach((emp: any) => {
+    const code = String(emp?.code || "").trim();
+    if (!code) return;
+    const dept = String(emp?.section || emp?.department || "غير مسجل").trim() || "غير مسجل";
+    employeeDeptByCode.set(code, dept);
+  });
+
+  const totals = records.reduce(
+    (acc: any, r: any) => {
+      const penalties = Array.isArray(r?.penalties) ? r.penalties : [];
+      const byType = { late: 0, early: 0, missing: 0, absenceDays: 0 };
+      for (const p of penalties) {
+        const v = Number(p?.value || 0);
+        if (!Number.isFinite(v)) continue;
+        if (p?.type === "تأخير") byType.late += v;
+        else if (p?.type === "انصراف مبكر") byType.early += v;
+        else if (p?.type === "سهو بصمة") byType.missing += v;
+        else if (p?.type === "غياب") byType.absenceDays += v;
+      }
+
+      // Business rule: absence is weighted x2 in totals
+      acc.late += byType.late;
+      acc.early += byType.early;
+      acc.missing += byType.missing;
+      acc.absenceWeighted += byType.absenceDays * 2;
+      acc.totalPenalties += byType.late + byType.early + byType.missing + byType.absenceDays * 2;
+
+      const code = String(r?.employeeCode || "").trim();
+      const dept = employeeDeptByCode.get(code) || "غير مسجل";
+      if (byType.absenceDays > 0) acc.absenceByDept.set(dept, (acc.absenceByDept.get(dept) || 0) + byType.absenceDays);
+      if (byType.late > 0) acc.lateByDept.set(dept, (acc.lateByDept.get(dept) || 0) + byType.late);
+      return acc;
+    },
+    { late: 0, early: 0, missing: 0, absenceWeighted: 0, totalPenalties: 0, absenceByDept: new Map<string, number>(), lateByDept: new Map<string, number>() }
+  );
+
+  const topFromMap = (m: Map<string, number>) =>
+    Array.from(m.entries())
+      .sort((a, b) => (b[1] || 0) - (a[1] || 0))
+      .slice(0, 5)
+      .map(([name, value]) => ({ name, value }));
+
+  const topAbsentDepts = topFromMap(totals.absenceByDept);
+  const topLateDepts = topFromMap(totals.lateByDept);
 
   const stats = [
     { title: "إجمالي الموظفين", value: allEmployees?.length || 0, icon: Users, color: "blue" as const, trend: "", trendUp: true },
-    { title: "حضور الفترة", value: presentCount, icon: CheckCircle, color: "green" as const, trend: "", trendUp: true },
-    { title: "تأخيرات الفترة", value: lateCount, icon: Clock, color: "orange" as const, trend: "", trendUp: true },
-    { title: "غياب الفترة", value: absentCount, icon: AlertTriangle, color: "red" as const, trend: "", trendUp: false },
+    { title: "عدد أيام الفترة", value: rangeDays, icon: CalendarCheck, color: "green" as const, trend: "", trendUp: true },
+    { title: "إجمالي التأخيرات", value: totals.late, icon: Clock, color: "orange" as const, trend: "", trendUp: true },
+    { title: "إجمالي الغياب (×2)", value: totals.absenceWeighted, icon: AlertTriangle, color: "red" as const, trend: "", trendUp: false },
   ];
 
   const chartData = [
-    { name: "حضور", value: presentCount },
-    { name: "غياب", value: absentCount },
-    { name: "تأخير", value: lateCount },
-    { name: "إجازات", value: excusedCount },
+    { name: "تأخير", value: totals.late },
+    { name: "انصراف مبكر", value: totals.early },
+    { name: "سهو بصمة", value: totals.missing },
+    { name: "غياب (×2)", value: totals.absenceWeighted },
   ];
 
-  const pieData = [
-    { name: 'حضور', value: presentCount },
-    { name: 'غياب', value: absentCount },
-    { name: 'تأخير', value: lateCount },
-    { name: 'إجازات', value: excusedCount },
-  ];
+  // (We intentionally keep only one chart; "Top departments" is shown as ranked lists.)
 
   const handleExportBackup = () => {
     const snapshot = getSnapshot();
@@ -195,7 +243,7 @@ export default function Dashboard() {
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <h2 className="text-2xl font-bold font-display">لوحة التحكم</h2>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <div className="flex items-center gap-2 bg-slate-50 border border-border rounded-lg p-1">
+                <div className="flex items-center gap-2 bg-muted/40 border border-border rounded-lg p-1">
                   <Input
                     type="text"
                     placeholder="dd/mm/yyyy"
@@ -244,57 +292,67 @@ export default function Dashboard() {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div className="lg:col-span-2 bg-white rounded-2xl p-6 border border-border/50 shadow-sm">
+            <div className="lg:col-span-2 bg-card rounded-2xl p-6 border border-border/50 shadow-sm">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-lg font-bold font-display">توزيع الحالات حسب الفترة المختارة</h3>
               </div>
               <div className="h-[300px] w-full" dir="ltr">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b'}} dy={10} />
-                    <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b'}} allowDecimals={false} />
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
+                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: "hsl(var(--muted-foreground))" }} dy={10} />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fill: "hsl(var(--muted-foreground))" }} allowDecimals={false} />
                     <Tooltip 
-                      contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}
-                      cursor={{fill: '#f1f5f9'}}
+                      contentStyle={{ borderRadius: '10px', border: '1px solid hsl(var(--border))', background: 'hsl(var(--popover))', color: 'hsl(var(--popover-foreground))', boxShadow: '0 10px 20px -10px rgb(0 0 0 / 0.35)' }}
+                      cursor={{ fill: 'hsl(var(--muted) / 0.5)' }}
                     />
-                    <Bar dataKey="value" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={32} />
+                    <Bar dataKey="value" fill="hsl(var(--primary))" radius={[6, 6, 0, 0]} barSize={32} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
             </div>
 
-            <div className="bg-white rounded-2xl p-6 border border-border/50 shadow-sm">
-              <h3 className="text-lg font-bold font-display mb-6">توزيع الحالات اليومية</h3>
+            <div className="bg-card rounded-2xl p-6 border border-border/50 shadow-sm">
+              <h3 className="text-lg font-bold font-display mb-6">أكثر الأقسام</h3>
               <div className="h-[300px] w-full flex items-center justify-center" dir="ltr">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={pieData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={60}
-                      outerRadius={80}
-                      paddingAngle={5}
-                      dataKey="value"
-                    >
-                      {pieData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                <div className="w-full space-y-4" dir="rtl">
+                  <div>
+                    <div className="text-sm font-semibold mb-2">الأكثر غيابًا</div>
+                    <div className="space-y-2">
+                      {(topAbsentDepts.length ? topAbsentDepts : [{ name: "-", value: 0 }]).map((d) => (
+                        <div key={`abs-${d.name}`} className="flex items-center gap-3">
+                          <div className="text-sm text-muted-foreground truncate w-40">{d.name}</div>
+                          <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+                            <div
+                              className="h-full rounded-full"
+                              style={{ width: `${Math.min(100, (d.value / Math.max(1, topAbsentDepts[0]?.value || 1)) * 100)}%`, background: "hsl(var(--destructive))" }}
+                            />
+                          </div>
+                          <div className="text-sm font-bold tabular-nums w-10 text-left">{d.value}</div>
+                        </div>
                       ))}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="grid grid-cols-2 gap-4 mt-4">
-                {pieData.map((item, index) => (
-                  <div key={item.name} className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
-                    <span className="text-sm text-muted-foreground">{item.name}</span>
-                    <span className="text-sm font-bold mr-auto">{item.value}</span>
+                    </div>
                   </div>
-                ))}
+
+                  <div className="pt-2 border-t border-border/50">
+                    <div className="text-sm font-semibold mb-2">الأكثر تأخيرًا</div>
+                    <div className="space-y-2">
+                      {(topLateDepts.length ? topLateDepts : [{ name: "-", value: 0 }]).map((d) => (
+                        <div key={`late-${d.name}`} className="flex items-center gap-3">
+                          <div className="text-sm text-muted-foreground truncate w-40">{d.name}</div>
+                          <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+                            <div
+                              className="h-full rounded-full"
+                              style={{ width: `${Math.min(100, (d.value / Math.max(1, topLateDepts[0]?.value || 1)) * 100)}%`, background: "hsl(var(--primary))" }}
+                            />
+                          </div>
+                          <div className="text-sm font-bold tabular-nums w-10 text-left">{d.value}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
+              </div>
             </div>
 
             <div className="lg:col-span-3">

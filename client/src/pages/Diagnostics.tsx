@@ -14,7 +14,7 @@ export default function Diagnostics() {
   }, []);
 
   return (
-    <div className="flex h-screen bg-slate-50/50" dir="rtl">
+    <div className="flex h-screen bg-background" dir="rtl">
       <Sidebar />
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header title="التشخيص" />
@@ -24,7 +24,7 @@ export default function Diagnostics() {
               <div className="text-sm text-muted-foreground">آخر الأخطاء المسجلة داخل الجلسة الحالية فقط</div>
               <Button variant="outline" onClick={() => { clearDiagnosticErrors(); setErrors([]); }}>مسح</Button>
             </div>
-            <div className="bg-white rounded-2xl border border-border/50 p-4 space-y-3">
+            <div className="bg-card rounded-2xl border border-border/50 p-4 space-y-3">
               {errors.length === 0 ? (
                 <p className="text-sm text-muted-foreground">لا توجد أخطاء مسجلة.</p>
               ) : (
