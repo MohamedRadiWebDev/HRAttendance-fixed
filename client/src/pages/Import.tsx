@@ -104,6 +104,8 @@ export default function Import() {
   const [punchStaging, setPunchStaging] = useState<{ employeeCode: string; punchDatetime: string; __row: number; __reason?: string }[]>([]);
   const [activeTab, setActiveTab] = useState("employees");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isReading, setIsReading] = useState(false);
+  const [readProgress, setReadProgress] = useState(0);
 
   const parsePunchDate = (rawDate: unknown) => {
     if (rawDate instanceof Date) {
@@ -165,14 +167,18 @@ export default function Import() {
 
     setImportLog(null);
     setDetectedColumns([]);
+    setReadProgress(0);
+    setIsReading(true);
 
     try {
       if (activeTab === "punches") {
         // Multi-file merge 🔥
         const allRows: any[] = [];
-        for (const f of files) {
+        for (let i = 0; i < files.length; i++) {
+          const f = files[i];
           const rows = await readXlsxFile(f);
           allRows.push(...rows);
+          setReadProgress(Math.round(((i + 1) / files.length) * 100));
         }
         if (allRows.length === 0) {
           toast({ title: "تنبيه", description: "الملفات فارغة", variant: "destructive" });
@@ -234,6 +240,7 @@ export default function Import() {
 
       // Employees (single file)
       const data = await readXlsxFile(files[0]);
+      setReadProgress(100);
       if (data.length === 0) {
         toast({ title: "تنبيه", description: "الملف فارغ", variant: "destructive" });
         return;
@@ -243,6 +250,8 @@ export default function Import() {
       toast({ title: "تم قراءة الملف", description: `تم العثور على ${data.length} سجل` });
     } catch (err: any) {
       toast({ title: "خطأ في قراءة الملف", description: err?.message || "فشل قراءة الملف", variant: "destructive" });
+    } finally {
+      setIsReading(false);
     }
   };
 
@@ -361,6 +370,18 @@ export default function Import() {
                   "
                 />
               </div>
+
+              {isReading ? (
+                <div className="mt-6 max-w-sm mx-auto">
+                  <div className="flex items-center justify-between text-xs text-muted-foreground mb-2">
+                    <span>جاري قراءة الملفات…</span>
+                    <span className="tabular-nums">{readProgress}%</span>
+                  </div>
+                  <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+                    <div className="h-full rounded-full bg-primary" style={{ width: `${Math.min(100, Math.max(0, readProgress))}%` }} />
+                  </div>
+                </div>
+              ) : null}
             </div>
 
             <div className="bg-card rounded-2xl border border-border/50 shadow-sm p-8 space-y-6">

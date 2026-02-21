@@ -24,6 +24,7 @@ import { useEffectsStore } from "@/store/effectsStore";
 import { useEffectsHistoryStore } from "@/store/effectsHistoryStore";
 import { QuickAddEffectDialog } from "@/components/QuickAddEffectDialog";
 import { resolveShiftForDate, timeStringToSeconds } from "@/engine/attendanceEngine";
+import { normalizeEmployeeCode } from "@shared/employee-code";
 
 // NOTE: XLSX remains used for parsing imports elsewhere in the app.
 // Export is handled by ExcelJS (loaded dynamically on click) to support styling.
@@ -36,7 +37,12 @@ export default function Attendance() {
   const hasInitialized = useRef(false);
   
   const [page, setPage] = useState(1);
-  const limit = 50;
+  const [pageSize, setPageSize] = useState<number>(() => {
+    const saved = localStorage.getItem("attendancePageSize");
+    const n = saved ? Number(saved) : 50;
+    return Number.isFinite(n) && n >= 0 ? n : 50;
+  });
+  const limit = pageSize;
   
   const { data: recordsData, isLoading } = useAttendanceRecords(dateRange.start, dateRange.end, employeeFilter, page, limit, false);
   const records = recordsData?.data;
@@ -45,6 +51,7 @@ export default function Attendance() {
   const { data: employees } = useEmployees();
   const punches = useAttendanceStore((state) => state.punches);
   const rules = useAttendanceStore((state) => state.rules);
+  const allAttendanceRecords = useAttendanceStore((state) => state.attendanceRecords);
   const effects = useEffectsStore((state) => state.effects);
   const processAttendance = useProcessAttendance();
   const updateAttendanceRecord = useUpdateAttendanceRecord();
@@ -128,6 +135,38 @@ export default function Attendance() {
     return true;
   });
 
+  // Full dataset for export/summary (independent from pagination).
+  const allFilteredRecords = useMemo(() => {
+    const startDate = dateRange.start;
+    const endDate = dateRange.end;
+    const raw = Array.isArray(allAttendanceRecords) ? allAttendanceRecords : [];
+
+    const codes = employeeFilter?.includes(",")
+      ? employeeFilter.split(",").map((c) => normalizeEmployeeCode(c)).filter(Boolean)
+      : employeeFilter
+        ? [normalizeEmployeeCode(employeeFilter)]
+        : [];
+
+    const base = raw.filter((r: any) => {
+      if (startDate && r.date < startDate) return false;
+      if (endDate && r.date > endDate) return false;
+      if (codes.length > 0 && !codes.includes(normalizeEmployeeCode(String(r.employeeCode || "")))) return false;
+      return true;
+    });
+
+    const sectorFiltered = base.filter((r: any) => {
+      if (sectorFilter === "all") return true;
+      const emp = employees?.find((e: any) => e.code === r.employeeCode);
+      return emp?.sector === sectorFilter;
+    });
+
+    // Keep same sort as useAttendanceRecords
+    return [...sectorFiltered].sort((a: any, b: any) => {
+      if (a.date === b.date) return (b.id ?? 0) - (a.id ?? 0);
+      return String(b.date).localeCompare(String(a.date));
+    });
+  }, [allAttendanceRecords, dateRange.start, dateRange.end, employeeFilter, sectorFilter, employees]);
+
   const displayedRecords = useMemo(() => {
     const rows = filteredRecords || [];
     if (activeTab === "exceptions") {
@@ -148,12 +187,12 @@ export default function Attendance() {
     if (activeTab !== "summary") return null;
     if (!dateRange.start || !dateRange.end) return null;
     return buildAttendanceExportRows({
-      records: (filteredRecords || []) as any,
+      records: (allFilteredRecords || []) as any,
       employees: (employees || []) as any,
       reportStartDate: dateRange.start,
       reportEndDate: dateRange.end,
     });
-  }, [activeTab, filteredRecords, employees, dateRange.start, dateRange.end]);
+  }, [activeTab, allFilteredRecords, employees, dateRange.start, dateRange.end]);
 
   const adjustmentFilters = {
     startDate: dateRange.start && dateRange.end ? dateRange.start : undefined,
@@ -283,6 +322,11 @@ export default function Attendance() {
     setPage(1);
   }, [dateRange.start, dateRange.end, employeeFilter, sectorFilter]);
 
+  useEffect(() => {
+    localStorage.setItem("attendancePageSize", String(pageSize));
+    setPage(1);
+  }, [pageSize]);
+
   const handleProcess = () => {
     if (!dateRange.start || !dateRange.end) {
       toast({ title: "خطأ", description: "يرجى تحديد الفترة أولاً", variant: "destructive" });
@@ -313,7 +357,8 @@ export default function Attendance() {
     });
   };
   const handleExport = async () => {
-    if (!records || records.length === 0) return;
+    const exportRecords = allFilteredRecords || [];
+    if (exportRecords.length === 0) return;
 
     // Pre-export validation (warnings only — export can continue)
     try {
@@ -325,10 +370,10 @@ export default function Attendance() {
       const missingHire = (employees || []).filter((e: any) => !String(e?.hireDate || e?.hire_date || "").trim());
       if (missingHire.length) warnings.push(`يوجد موظفون بدون تاريخ تعيين (${missingHire.length}).`);
 
-      const unknownInRecords = (records || []).filter((r: any) => !codes.includes(String(r.employeeCode || "").trim()));
+      const unknownInRecords = exportRecords.filter((r: any) => !codes.includes(String(r.employeeCode || "").trim()));
       if (unknownInRecords.length) warnings.push(`يوجد سجلات لكود غير موجود في الماستر (${unknownInRecords.length}).`);
 
-      const has1970 = (records || []).some((r: any) => String(r.date || "").includes("1970"));
+      const has1970 = exportRecords.some((r: any) => String(r.date || "").includes("1970"));
       if (has1970) warnings.push("تم اكتشاف تاريخ غير صالح (1970) في بعض السجلات.");
 
       if (warnings.length) {
@@ -341,7 +386,7 @@ export default function Attendance() {
       // ignore
     }
     const { detailHeaders, detailRows, summaryHeaders, summaryRows } = buildAttendanceExportRows({
-      records,
+      records: exportRecords,
       employees: employees || [],
       reportStartDate: dateRange.start,
       reportEndDate: dateRange.end,
@@ -361,7 +406,7 @@ export default function Attendance() {
       return;
     }
 
-    const invalidRow = (records || []).find((row: any) => {
+    const invalidRow = exportRecords.find((row: any) => {
       if (!row.employeeCode || !String(row.employeeCode).trim()) return true;
       const name = employees?.find((e) => e.code === row.employeeCode)?.nameAr || "";
       if (!name.trim()) return true;
@@ -528,7 +573,7 @@ export default function Attendance() {
         ["تاريخ إنشاء التقرير", generatedAtText],
         ["الفترة", `${dateRange.start || ""} → ${dateRange.end || ""}`],
         ["عدد الموظفين", (employees || []).length],
-        ["عدد السجلات", (records || []).length],
+        ["عدد السجلات", (exportRecords || []).length],
         ["Generated by", "HR Attendance System"],
       ]);
       wsAudit.getRow(1).eachCell((cell: any) => {
@@ -690,6 +735,21 @@ export default function Attendance() {
                     {sectors.map(s => (
                       <SelectItem key={s} value={s as string}>{s}</SelectItem>
                     ))}
+                  </SelectContent>
+                </Select>
+
+                <Select
+                  value={String(pageSize)}
+                  onValueChange={(v) => setPageSize(Number(v))}
+                >
+                  <SelectTrigger className="w-[180px] h-10">
+                    <SelectValue placeholder="عدد الصفوف" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="50">50 صف</SelectItem>
+                    <SelectItem value="100">100 صف</SelectItem>
+                    <SelectItem value="200">200 صف</SelectItem>
+                    <SelectItem value="0">كل البيانات</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

@@ -41,7 +41,13 @@ export function GlobalSearchDialog({ open, onOpenChange }: Props) {
 
   const goReport = (code: string) => {
     onOpenChange(false);
-    setLocation(`/attendance?employee=${encodeURIComponent(code)}`);
+    const startDate = localStorage.getItem("attendanceStartDate") || "";
+    const endDate = localStorage.getItem("attendanceEndDate") || "";
+    const params = new URLSearchParams();
+    params.set("employee", code);
+    if (startDate) params.set("startDate", startDate);
+    if (endDate) params.set("endDate", endDate);
+    setLocation(`/attendance?${params.toString()}`);
   };
 
   return (

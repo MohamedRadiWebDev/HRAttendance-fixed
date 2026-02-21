@@ -27,7 +27,6 @@ export const DETAIL_HEADERS = [
   "إجمالي الجزاءات",
   "ملاحظات",
   "مدير الإدارة",
-  "إجمالي الإضافي",
 ] as const;
 
 export const SUMMARY_HEADERS = [

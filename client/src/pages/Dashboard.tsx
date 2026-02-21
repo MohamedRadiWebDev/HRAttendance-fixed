@@ -111,14 +111,6 @@ export default function Dashboard() {
     return Math.floor((e - s) / 86400000) + 1;
   })();
 
-  const employeeDeptByCode = new Map<string, string>();
-  (allEmployees || []).forEach((emp: any) => {
-    const code = String(emp?.code || "").trim();
-    if (!code) return;
-    const dept = String(emp?.section || emp?.department || "غير مسجل").trim() || "غير مسجل";
-    employeeDeptByCode.set(code, dept);
-  });
-
   const totals = records.reduce(
     (acc: any, r: any) => {
       const penalties = Array.isArray(r?.penalties) ? r.penalties : [];
@@ -132,20 +124,20 @@ export default function Dashboard() {
         else if (p?.type === "غياب") byType.absenceDays += v;
       }
 
-      // Business rule: absence is weighted x2 in totals
+      // Dashboard: show raw absence days (NOT weighted). Weighting is a summary/export business rule.
       acc.late += byType.late;
       acc.early += byType.early;
       acc.missing += byType.missing;
-      acc.absenceWeighted += byType.absenceDays * 2;
+      acc.absenceDays += byType.absenceDays;
       acc.totalPenalties += byType.late + byType.early + byType.missing + byType.absenceDays * 2;
 
       const code = String(r?.employeeCode || "").trim();
-      const dept = employeeDeptByCode.get(code) || "غير مسجل";
-      if (byType.absenceDays > 0) acc.absenceByDept.set(dept, (acc.absenceByDept.get(dept) || 0) + byType.absenceDays);
-      if (byType.late > 0) acc.lateByDept.set(dept, (acc.lateByDept.get(dept) || 0) + byType.late);
+      const empName = String(r?.employeeName || "").trim() || String((allEmployees || []).find((e: any) => String(e?.code || "").trim() === code)?.nameAr || "").trim() || code;
+      if (byType.absenceDays > 0) acc.absenceByEmployee.set(`${code}__${empName}`, (acc.absenceByEmployee.get(`${code}__${empName}`) || 0) + byType.absenceDays);
+      if (byType.late > 0) acc.lateByEmployee.set(`${code}__${empName}`, (acc.lateByEmployee.get(`${code}__${empName}`) || 0) + byType.late);
       return acc;
     },
-    { late: 0, early: 0, missing: 0, absenceWeighted: 0, totalPenalties: 0, absenceByDept: new Map<string, number>(), lateByDept: new Map<string, number>() }
+    { late: 0, early: 0, missing: 0, absenceDays: 0, totalPenalties: 0, absenceByEmployee: new Map<string, number>(), lateByEmployee: new Map<string, number>() }
   );
 
   const topFromMap = (m: Map<string, number>) =>
@@ -154,21 +146,27 @@ export default function Dashboard() {
       .slice(0, 5)
       .map(([name, value]) => ({ name, value }));
 
-  const topAbsentDepts = topFromMap(totals.absenceByDept);
-  const topLateDepts = topFromMap(totals.lateByDept);
+  const topAbsentEmployees = topFromMap(totals.absenceByEmployee).map(({ name, value }) => {
+    const [code, empName] = String(name).split("__");
+    return { name: empName || code, value, code };
+  });
+  const topLateEmployees = topFromMap(totals.lateByEmployee).map(({ name, value }) => {
+    const [code, empName] = String(name).split("__");
+    return { name: empName || code, value, code };
+  });
 
   const stats = [
     { title: "إجمالي الموظفين", value: allEmployees?.length || 0, icon: Users, color: "blue" as const, trend: "", trendUp: true },
     { title: "عدد أيام الفترة", value: rangeDays, icon: CalendarCheck, color: "green" as const, trend: "", trendUp: true },
     { title: "إجمالي التأخيرات", value: totals.late, icon: Clock, color: "orange" as const, trend: "", trendUp: true },
-    { title: "إجمالي الغياب (×2)", value: totals.absenceWeighted, icon: AlertTriangle, color: "red" as const, trend: "", trendUp: false },
+    { title: "إجمالي الغياب", value: totals.absenceDays, icon: AlertTriangle, color: "red" as const, trend: "", trendUp: false },
   ];
 
   const chartData = [
     { name: "تأخير", value: totals.late },
     { name: "انصراف مبكر", value: totals.early },
     { name: "سهو بصمة", value: totals.missing },
-    { name: "غياب (×2)", value: totals.absenceWeighted },
+    { name: "غياب", value: totals.absenceDays },
   ];
 
   // (We intentionally keep only one chart; "Top departments" is shown as ranked lists.)
@@ -313,19 +311,21 @@ export default function Dashboard() {
             </div>
 
             <div className="bg-card rounded-2xl p-6 border border-border/50 shadow-sm">
-              <h3 className="text-lg font-bold font-display mb-6">أكثر الأقسام</h3>
+              <h3 className="text-lg font-bold font-display mb-6">أكثر الموظفين</h3>
               <div className="h-[300px] w-full flex items-center justify-center" dir="ltr">
                 <div className="w-full space-y-4" dir="rtl">
                   <div>
                     <div className="text-sm font-semibold mb-2">الأكثر غيابًا</div>
                     <div className="space-y-2">
-                      {(topAbsentDepts.length ? topAbsentDepts : [{ name: "-", value: 0 }]).map((d) => (
-                        <div key={`abs-${d.name}`} className="flex items-center gap-3">
-                          <div className="text-sm text-muted-foreground truncate w-40">{d.name}</div>
+                      {(topAbsentEmployees.length ? topAbsentEmployees : [{ name: "-", value: 0, code: "" }]).map((d: any) => (
+                        <div key={`abs-${d.code || d.name}`} className="flex items-center gap-3">
+                          <div className="text-sm text-muted-foreground truncate w-44" title={d.code ? `${d.name} (${d.code})` : d.name}>
+                            {d.code ? `${d.name} (${d.code})` : d.name}
+                          </div>
                           <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
                             <div
                               className="h-full rounded-full"
-                              style={{ width: `${Math.min(100, (d.value / Math.max(1, topAbsentDepts[0]?.value || 1)) * 100)}%`, background: "hsl(var(--destructive))" }}
+                              style={{ width: `${Math.min(100, (d.value / Math.max(1, topAbsentEmployees[0]?.value || 1)) * 100)}%`, background: "hsl(var(--destructive))" }}
                             />
                           </div>
                           <div className="text-sm font-bold tabular-nums w-10 text-left">{d.value}</div>
@@ -337,13 +337,15 @@ export default function Dashboard() {
                   <div className="pt-2 border-t border-border/50">
                     <div className="text-sm font-semibold mb-2">الأكثر تأخيرًا</div>
                     <div className="space-y-2">
-                      {(topLateDepts.length ? topLateDepts : [{ name: "-", value: 0 }]).map((d) => (
-                        <div key={`late-${d.name}`} className="flex items-center gap-3">
-                          <div className="text-sm text-muted-foreground truncate w-40">{d.name}</div>
+                      {(topLateEmployees.length ? topLateEmployees : [{ name: "-", value: 0, code: "" }]).map((d: any) => (
+                        <div key={`late-${d.code || d.name}`} className="flex items-center gap-3">
+                          <div className="text-sm text-muted-foreground truncate w-44" title={d.code ? `${d.name} (${d.code})` : d.name}>
+                            {d.code ? `${d.name} (${d.code})` : d.name}
+                          </div>
                           <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
                             <div
                               className="h-full rounded-full"
-                              style={{ width: `${Math.min(100, (d.value / Math.max(1, topLateDepts[0]?.value || 1)) * 100)}%`, background: "hsl(var(--primary))" }}
+                              style={{ width: `${Math.min(100, (d.value / Math.max(1, topLateEmployees[0]?.value || 1)) * 100)}%`, background: "hsl(var(--primary))" }}
                             />
                           </div>
                           <div className="text-sm font-bold tabular-nums w-10 text-left">{d.value}</div>
