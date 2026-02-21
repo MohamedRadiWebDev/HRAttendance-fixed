@@ -3,12 +3,12 @@ import { Header } from "@/components/Header";
 import { StatCard } from "@/components/StatCard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, Clock, AlertTriangle, CheckCircle, Trash2, ShieldCheck } from "lucide-react";
+import { Users, Clock, AlertTriangle, CheckCircle, Trash2 } from "lucide-react";
 import { useAttendanceRecords } from "@/hooks/use-attendance";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { useEmployees } from "@/hooks/use-employees";
 import { format, parse } from "date-fns";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { useAttendanceStore, type AttendanceStoreState } from "@/store/attendanceStore";
 import { useToast } from "@/hooks/use-toast";
@@ -98,66 +98,32 @@ export default function Dashboard() {
     }
   }, [dateRange]);
 
-  const rangeRecords = (attendanceData as any)?.data || [];
-
-  const dayCount = useMemo(() => {
-    if (!dateRange.start || !dateRange.end) return 0;
-    const s = new Date(dateRange.start);
-    const e = new Date(dateRange.end);
-    if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return 0;
-    const diff = Math.floor((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24));
-    return diff >= 0 ? diff + 1 : 0;
-  }, [dateRange.end, dateRange.start]);
-
-  const aggregates = useMemo(() => {
-    const sum = { late: 0, early: 0, missing: 0, absenceWeighted: 0, penaltiesTotal: 0 };
-    for (const r of rangeRecords as any[]) {
-      const penalties = Array.isArray(r.penalties) ? r.penalties : [];
-      for (const p of penalties) {
-        const t = String(p?.type || "");
-        const v = Number(p?.value ?? p?.minutes ?? p?.days ?? 0) || 0;
-        if (t === "late_arrival") sum.late += v;
-        if (t === "early_leave") sum.early += v;
-        if (t === "missing_stamp") sum.missing += v;
-        if (t === "absence") sum.absenceWeighted += v * 2;
-      }
-    }
-    sum.penaltiesTotal = sum.late + sum.early + sum.missing + sum.absenceWeighted;
-    return sum;
-  }, [rangeRecords]);
-
-  const topDepartments = useMemo(() => {
-    const empByCode = new Map((allEmployees || []).map((e: any) => [String(e.code), e]));
-    const mapAbsent = new Map<string, number>();
-    const mapLate = new Map<string, number>();
-    for (const r of rangeRecords as any[]) {
-      const emp = empByCode.get(String(r.employeeCode)) as any;
-      const dept = String(emp?.department || "غير محدد");
-      const penalties = Array.isArray(r.penalties) ? r.penalties : [];
-      for (const p of penalties) {
-        const t = String(p?.type || "");
-        const v = Number(p?.value ?? p?.minutes ?? p?.days ?? 0) || 0;
-        if (t === "absence") mapAbsent.set(dept, (mapAbsent.get(dept) || 0) + v);
-        if (t === "late_arrival") mapLate.set(dept, (mapLate.get(dept) || 0) + v);
-      }
-    }
-    const top = (m: Map<string, number>) =>
-      Array.from(m.entries())
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 5)
-        .map(([name, value]) => ({ name, value }));
-    return { absence: top(mapAbsent), late: top(mapLate) };
-  }, [allEmployees, rangeRecords]);
+  const todayRecords = (attendanceData as any)?.data || [];
+  const presentCount = todayRecords.filter((r: any) => r.status === "Present" || r.status === "Late").length;
+  const lateCount = todayRecords.filter((r: any) => r.status === "Late").length;
+  const absentCount = todayRecords.filter((r: any) => r.status === "Absent").length;
+  const excusedCount = todayRecords.filter((r: any) => r.status === "Excused").length;
 
   const stats = [
-    { title: "عدد الموظفين", value: allEmployees?.length || 0, icon: Users, color: "blue" as const, trend: "", trendUp: true },
-    { title: "عدد أيام الفترة", value: dayCount, icon: ShieldCheck, color: "green" as const, trend: "", trendUp: true },
-    { title: "إجمالي التأخيرات", value: aggregates.late, icon: Clock, color: "orange" as const, trend: "", trendUp: true },
-    { title: "إجمالي الغياب (×2)", value: aggregates.absenceWeighted, icon: AlertTriangle, color: "red" as const, trend: "", trendUp: false },
+    { title: "إجمالي الموظفين", value: allEmployees?.length || 0, icon: Users, color: "blue" as const, trend: "", trendUp: true },
+    { title: "حضور الفترة", value: presentCount, icon: CheckCircle, color: "green" as const, trend: "", trendUp: true },
+    { title: "تأخيرات الفترة", value: lateCount, icon: Clock, color: "orange" as const, trend: "", trendUp: true },
+    { title: "غياب الفترة", value: absentCount, icon: AlertTriangle, color: "red" as const, trend: "", trendUp: false },
   ];
 
-  const chartData = topDepartments.absence;
-  const pieData = topDepartments.late;
+  const chartData = [
+    { name: "حضور", value: presentCount },
+    { name: "غياب", value: absentCount },
+    { name: "تأخير", value: lateCount },
+    { name: "إجازات", value: excusedCount },
+  ];
+
+  const pieData = [
+    { name: 'حضور', value: presentCount },
+    { name: 'غياب', value: absentCount },
+    { name: 'تأخير', value: lateCount },
+    { name: 'إجازات', value: excusedCount },
+  ];
 
   const handleExportBackup = () => {
     const snapshot = getSnapshot();
