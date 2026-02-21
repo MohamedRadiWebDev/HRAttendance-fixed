@@ -1,0 +1,168 @@
+Add a NEW feature: “Bulk Adjustments Import” from Excel + add automatic attendance Notes rules.
+
+==================================================
+ABSOLUTE GUARDRAILS
+==================================================
+- Do NOT modify fingerprint import/parsing/timezone logic.
+- Do NOT change biometric_punches schema or punch grouping.
+- All new logic must be applied AFTER punches are grouped into daily check-in/out, before penalties are finalized.
+- Keep Friday Control unchanged.
+
+==================================================
+NEW INPUT FILE (EXCEL) — BULK ADJUSTMENTS
+==================================================
+
+Create a new UI page: "رفع التعديلات"
+HR uploads an Excel file with Arabic headers EXACTLY:
+
+الكود | الاسم | التاريخ | من | الي | النوع
+
+Examples:
+1 | محمد  | 2026-01-05 | 09:00 | 13:00 | إجازة نص يوم
+2 | احمد  | 2026-01-05 | 13:00 | 17:00 | إجازة نص يوم
+3 | محمود | 2026-01-05 | 09:00 | 11:00 | اذن صباحي
+4 | علي   | 2026-01-05 | 15:00 | 17:00 | اذن مسائي
+5 | علاء  | 2026-01-05 | 09:00 | 17:00 | مأمورية
+
+Parsing/Normalization:
+- التاريخ normalize to YYYY-MM-DD
+- من/الي normalize to HH:mm:ss
+- Accept "9:00" and normalize to "09:00:00"
+- Validate from < to
+- Validate employeeCode exists
+- النوع allowed values:
+  - "اذن صباحي"
+  - "اذن مسائي"
+  - "إجازة نص يوم"
+  - "مأمورية"
+
+Import must:
+- Store valid rows
+- Show invalid rows with rowIndex + reason in an Import Validation panel
+
+==================================================
+DATA MODEL
+==================================================
+
+Use existing adjustments table if present.
+If missing or insufficient, create/extend a table adjustments with:
+- id
+- employeeCode
+- date (YYYY-MM-DD)
+- type (text)
+- fromTime (HH:mm:ss)
+- toTime (HH:mm:ss)
+- source = "excel"
+- sourceFileName
+- importedAt
+- note (nullable)
+
+Uniqueness:
+(employeeCode, date, type, fromTime, toTime, source)
+
+==================================================
+BUSINESS LOGIC — APPLY ADJUSTMENTS (NO PUNCH CHANGES)
+==================================================
+
+Adjustments affect daily attendance calculations by modifying:
+- effectiveShiftStartForLate
+- effectiveShiftEndForEarlyLeave
+- missionStart/missionEnd candidates
+- excused flags
+
+Rules:
+
+1) "اذن صباحي"
+- permissionDuration = toTime - fromTime
+- effectiveShiftStartForLate = shiftStart + permissionDuration
+- Late penalty uses (checkIn - effectiveShiftStartForLate)
+
+2) "اذن مسائي"
+- permissionDuration = toTime - fromTime
+- effectiveShiftEndForEarlyLeave = shiftEnd - permissionDuration
+- Early leave uses (effectiveShiftEndForEarlyLeave - checkOut)
+
+3) "إجازة نص يوم"
+- If fromTime == shiftStart:
+    excused first part; attendance required from toTime
+    effectiveShiftStartForLate = toTime
+- If toTime == shiftEnd:
+    excused last part; attendance required until fromTime
+    effectiveShiftEndForEarlyLeave = fromTime
+- Half-day suppresses absence according to policy:
+   If no punches at all, it is excused (NOT unauthorized absence).
+- Store a flag in attendance_records for audit/export.
+
+4) "مأمورية"
+- Store missionStart/missionEnd in attendance_records
+- FirstStamp candidate includes missionStart
+- LastStamp candidate includes missionEnd
+- Mission suppresses penalties (late/early/absence) for that day.
+- If missionEnd reaches shiftEnd, day counts as normal attendance.
+
+==================================================
+NEW REQUIREMENT — AUTOMATIC NOTES (ملاحظات)
+==================================================
+
+In attendance_records add/update a Notes field (existing if present) and set it automatically:
+
+A) "سهو بصمة"
+Condition:
+- checkIn exists AND checkOut is missing
+- AND day is not excused by leave/mission/fridayLeave
+Action:
+- Set notes to include "سهو بصمة"
+- Do NOT change penalty rules unless system already has a missing-stamp penalty; keep penalty behavior unchanged.
+- Notes must not interfere with fingerprint import.
+
+B) "انصراف مبكر"
+Condition:
+- checkOut exists
+- AND effectiveShiftEndForEarlyLeave exists
+- AND checkOut < effectiveShiftEndForEarlyLeave minus graceMinutes
+- AND day not excused by leave/mission/fridayLeave
+Action:
+- Set notes to include "انصراف مبكر"
+
+Notes rules must:
+- Append without deleting existing manual notes
+- Avoid duplicates (do not add same note twice)
+- Be deterministic (same inputs => same notes)
+
+==================================================
+ENGINE INTEGRATION ORDER (CRITICAL)
+==================================================
+
+In server attendance processing loop:
+1) derive checkIn/checkOut from punches (unchanged)
+2) resolve shiftStart/shiftEnd (unchanged)
+3) load adjustments (excel + manual)
+4) compute effectiveShiftStartForLate / effectiveShiftEndForEarlyLeave / mission fields
+5) apply Friday leave override (unchanged)
+6) compute penalties (late/early/absence) using effective boundaries
+7) compute automatic notes ("سهو بصمة", "انصراف مبكر")
+8) save attendance_records
+
+==================================================
+UI REQUIREMENTS
+==================================================
+- Add sidebar item: "رفع التعديلات"
+- Upload + preview + validation panel
+- Filters for imported adjustments (date range, type, employee)
+- In Attendance grid, show adjustments + notes clearly
+
+==================================================
+DELIVERABLES
+==================================================
+- New page + route
+- Excel parser with Arabic headers
+- DB upsert for adjustments
+- Engine integration applying adjustments to effective boundaries
+- Automatic notes rules implemented safely
+- Tests:
+  - morning permission shifts effective start
+  - evening permission shifts effective end
+  - half-day start vs end
+  - mission affects first/last stamps
+  - missing checkOut adds "سهو بصمة"
+  - early checkOut adds "انصراف مبكر"

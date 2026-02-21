@@ -11,12 +11,14 @@ import { EFFECT_TYPE_OPTIONS } from "@/effects/effectsImport";
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  target: { code: string; name?: string; date: string } | null;
+  employeeCode: string;
+  employeeName?: string;
+  defaultDate: string;
 };
 
 const needsTimeRange = (type: string) => type === "مأمورية" || type === "اذن صباحي" || type === "اذن مسائي";
 
-export function QuickAddEffectDialog({ open, onOpenChange, target }: Props) {
+export function QuickAddEffectDialog({ open, onOpenChange, employeeCode, employeeName, defaultDate }: Props) {
   const { toast } = useToast();
   const upsertEffects = useEffectsStore((s) => s.upsertEffects);
 
@@ -24,6 +26,13 @@ export function QuickAddEffectDialog({ open, onOpenChange, target }: Props) {
   const [fromTime, setFromTime] = useState<string>("09:00");
   const [toTime, setToTime] = useState<string>("13:00");
   const [note, setNote] = useState<string>("");
+
+  const target = useMemo(() => {
+    const code = String(employeeCode || "").trim();
+    const date = String(defaultDate || "").trim();
+    if (!code || !date) return null;
+    return { code, name: employeeName, date };
+  }, [employeeCode, employeeName, defaultDate]);
 
   const isOpen = open && !!target;
 

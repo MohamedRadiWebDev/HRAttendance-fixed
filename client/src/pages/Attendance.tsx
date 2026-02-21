@@ -36,7 +36,23 @@ export default function Attendance() {
   const hasInitialized = useRef(false);
   
   const [page, setPage] = useState(1);
-  const limit = 0;
+  const [limit, setLimit] = useState<number>(100);
+
+  // If user arrived from global search (or a deep link) we accept ?employee=CODE
+  useEffect(() => {
+    try {
+      const u = new URL(window.location.href);
+      const code = (u.searchParams.get("employee") || "").trim();
+      if (code) {
+        setEmployeeFilter(code);
+        setActiveTab("detail");
+        setPage(1);
+      }
+    } catch {
+      // ignore
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location]);
   
   const { data: recordsData, isLoading } = useAttendanceRecords(dateRange.start, dateRange.end, employeeFilter, page, limit, false);
   const records = recordsData?.data;
@@ -398,7 +414,7 @@ export default function Attendance() {
 
         const dateCols = ["التاريخ", "تاريخ التعيين", "تاريخ ترك العمل"].map(getCol).filter((c) => c > 0);
         const timeCols = ["الدخول", "الخروج"].map(getCol).filter((c) => c > 0);
-        const hourCols = ["ساعات العمل", "الإضافي"].map(getCol).filter((c) => c > 0);
+        const hourCols = ["ساعات العمل", "الإضافي", "إجمالي الإضافي"].map(getCol).filter((c) => c > 0);
 
         for (let r = 2; r <= lastRow; r++) {
           const row = ws.getRow(r);
@@ -487,8 +503,35 @@ export default function Attendance() {
         return ws;
       };
 
+      // Add an extra column (at the very end) for total overtime in Summary.
+      // We intentionally append it LAST to avoid shifting any existing columns/formulas.
+      const summaryHeadersExt = [...summaryHeaders, "إجمالي الإضافي"];
+
+      const overtimeByCode = new Map<string, number>();
+      try {
+        const idxCode = detailHeaders.indexOf("الكود");
+        const idxOt = detailHeaders.indexOf("الإضافي");
+        if (idxCode >= 0 && idxOt >= 0) {
+          for (const row of detailRows) {
+            const code = String(row[idxCode] ?? "").trim();
+            const ot = Number(row[idxOt] ?? 0);
+            if (!code) continue;
+            if (!Number.isFinite(ot)) continue;
+            overtimeByCode.set(code, (overtimeByCode.get(code) || 0) + ot);
+          }
+        }
+      } catch {
+        // ignore; overtime stays blank
+      }
+
+      const summaryRowsExt = summaryRows.map((row) => {
+        const code = String(row[0] ?? "").trim();
+        const totalOt = overtimeByCode.get(code) || 0;
+        return [...row, totalOt];
+      });
+
       const wsDetail = applySheet("تفصيلي", detailHeaders, detailRows, { xSplit: 4 });
-      const wsSummary = applySheet("ملخص", summaryHeaders, summaryRows, { xSplit: 2 });
+      const wsSummary = applySheet("ملخص", summaryHeadersExt, summaryRowsExt, { xSplit: 2 });
 
       // Optional: write formulas in Summary so totals stay consistent even after manual edits.
       // We only set formulas for numeric aggregations that are safe SUMIFs.
@@ -496,7 +539,7 @@ export default function Attendance() {
         const detailHeaderIndex = new Map<string, string>();
         detailHeaders.forEach((h, i) => detailHeaderIndex.set(h, wsDetail.getColumn(i + 1).letter));
         const sumHeaderIndex = new Map<string, number>();
-        summaryHeaders.forEach((h, i) => sumHeaderIndex.set(h, i + 1));
+        summaryHeadersExt.forEach((h, i) => sumHeaderIndex.set(h, i + 1));
 
         const codeColLetter = detailHeaderIndex.get("الكود") || "C";
 
@@ -513,9 +556,8 @@ export default function Attendance() {
           }
         };
 
-        // Joining / Termination period totals
-        sumif("فترة الالتحاق", "فترة الالتحاق");
-        sumif("فترة الترك", "فترة الترك");
+        // IMPORTANT: Joining / Termination period should remain plain values (no formulas)
+        // as requested (these are business-period counters, not sums after manual edits).
 
         // Penalties totals
         sumif("تأخير", "إجمالي التأخيرات");
@@ -555,13 +597,13 @@ export default function Attendance() {
   };
 
   return (
-    <div className="flex h-screen bg-slate-50/50">
+    <div className="flex h-screen bg-background">
       <Sidebar />
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header title="الحضور والانصراف" />
         
         <main className="flex-1 overflow-y-auto p-8">
-          <div className="bg-white rounded-2xl border border-border/50 shadow-sm overflow-hidden flex flex-col h-full">
+          <div className="bg-card rounded-2xl border border-border/50 shadow-sm overflow-hidden flex flex-col h-full">
             <div className="p-6 border-b border-border/50 flex flex-col sm:flex-row items-center justify-between gap-4 sticky top-0 z-20 bg-background/90 backdrop-blur">
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-2 bg-slate-50 border border-border rounded-lg p-1">
@@ -611,11 +653,36 @@ export default function Attendance() {
                     placeholder="مثال: 101, 102, 105" 
                     className="pr-10 h-10"
                     value={employeeFilter} 
-                    onChange={(e) => setEmployeeFilter(e.target.value)} 
+                    onChange={(e) => {
+                      setEmployeeFilter(e.target.value);
+                      setPage(1);
+                    }} 
                   />
                 </div>
               </div>
-                <Select value={sectorFilter} onValueChange={setSectorFilter}>
+
+              <div className="space-y-2 min-w-[160px]">
+                <label className="text-sm font-medium">حجم الصفحة</label>
+                <Select
+                  value={String(limit)}
+                  onValueChange={(v) => {
+                    const next = Number(v);
+                    setLimit(Number.isFinite(next) ? next : 100);
+                    setPage(1);
+                  }}
+                >
+                  <SelectTrigger className="w-[160px] h-10">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="50">50</SelectItem>
+                    <SelectItem value="100">100</SelectItem>
+                    <SelectItem value="200">200</SelectItem>
+                    <SelectItem value="0">كل النتائج</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+                <Select value={sectorFilter} onValueChange={(v) => { setSectorFilter(v); setPage(1);} }>
                   <SelectTrigger className="w-[180px] h-10">
                     <SelectValue placeholder="القطاع" />
                   </SelectTrigger>
@@ -943,7 +1010,7 @@ export default function Attendance() {
               </div>
             </div>
             {limit > 0 && totalPages > 1 && (
-              <div className="p-4 border-t border-border/50 flex items-center justify-center gap-2 bg-white">
+              <div className="p-4 border-t border-border/50 flex items-center justify-center gap-2 bg-background">
                 <Button variant="outline" size="sm" disabled={page === 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
                   السابق
                 </Button>

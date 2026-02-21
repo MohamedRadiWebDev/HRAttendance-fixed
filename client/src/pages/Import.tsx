@@ -315,7 +315,7 @@ export default function Import() {
   };
 
   return (
-    <div className="flex h-screen bg-slate-50/50">
+    <div className="flex h-screen bg-background">
       <Sidebar />
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header title="استيراد البيانات" />

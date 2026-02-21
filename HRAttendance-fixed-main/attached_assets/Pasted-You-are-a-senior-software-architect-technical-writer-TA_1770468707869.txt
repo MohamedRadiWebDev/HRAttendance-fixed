@@ -1,0 +1,98 @@
+You are a senior software architect + technical writer.
+
+TASK
+Create a complete, production-quality README.md for this HR Attendance & Payroll web app currently running on Replit with a PostgreSQL database.
+
+GOALS OF README
+1) Explain the system end-to-end (business + technical): what it does and how it works.
+2) Document the full project structure and code ownership (where each feature lives).
+3) Document setup, running locally, and deploying outside Replit (Vercel).
+4) Explain database usage, migrations, and how to connect to an external free database.
+5) Provide a confirmable checklist to migrate safely without breaking attendance logic (especially fingerprint handling and date/time logic).
+6) Provide troubleshooting & common errors.
+
+ABSOLUTE REQUIREMENTS
+- The README must be accurate to the actual repository code: do NOT guess.
+- Scan the codebase and extract real details:
+  - frameworks (React/Vite/Next?), server (Express?), ORM (Drizzle?), DB tables, env vars, scripts
+  - routes/endpoints
+  - import/export Excel workflows
+  - attendance processing engine logic entry points
+  - any background jobs or cron (if any)
+- Include Arabic terminology where relevant (الحضور والانصراف، الملخص، البصمة…).
+- Use clear sections, bullet points, and code blocks.
+- Include an “Architecture Diagram” in ASCII.
+- Include “Data Flow” and “Workflow A→Z”.
+- Include “Deployment on Vercel” steps that are realistic.
+- Include “Free DB options” with recommended approach and exact env var examples.
+- Include “Security notes” (even if auth is absent) and “Backup notes”.
+
+WHAT TO ANALYZE IN THE REPO (MANDATORY)
+1) Project layout:
+   - /client, /server, /shared (or actual folders)
+   - key files: schema, storage, routes, import screens, attendance processing logic
+2) Package scripts:
+   - npm scripts, build commands, dev commands
+3) Environment variables:
+   - DATABASE_URL, any Replit-specific variables, ports, etc.
+4) Database:
+   - ORM: Drizzle migrations? drizzle-kit config?
+   - Tables: employees, biometric punches, attendance records, rules, leaves, etc.
+5) Excel import/export:
+   - Expected headers for fingerprint file (e.g., كود / التاريخ_والوقت)
+   - Master data columns used (e.g., القطاع)
+   - Output report structure (تفصيلي + ملخص)
+6) Attendance engine:
+   - How check-in/out is computed
+   - How penalties work (تأخير، انصراف مبكر، سهو بصمة، غياب ×2)
+   - How overtime is computed
+   - Friday behavior (جمعة إجازة عادية / بدل يوم الجمعة count)
+   - How special rules/custom shifts apply and scopes are parsed
+7) Known constraints and gotchas:
+   - timezones / midnight rollover rules
+   - Excel date parsing pitfalls
+   - sorting vs min/max punches
+
+README STRUCTURE (MUST FOLLOW)
+1) Project Title + One paragraph overview
+2) Features (bullet list)
+3) Screens / Pages (what each page does)
+4) Business Rules Summary (with Arabic column names)
+5) Data Flow & Workflow A→Z
+6) Architecture (frontend, backend, DB) + ASCII diagram
+7) Folder Structure (tree) + responsibilities per file
+8) Database
+   - tables overview
+   - migrations / schema management
+9) API Endpoints (table: method, path, purpose)
+10) Excel Import/Export
+   - Required file formats + examples of headers
+   - Validation behavior
+11) Local Development
+   - prerequisites
+   - setup steps
+   - run commands
+12) Deployment: Vercel
+   - recommended approach (split or serverless)
+   - build settings
+   - env vars
+   - routing notes
+13) Database: Free External Options
+   - pick 2–3 (Neon/Supabase/Render/etc.)
+   - pros/cons + recommended one
+   - exact DATABASE_URL format examples
+14) Migration Checklist (Replit → Vercel)
+15) Troubleshooting (common errors)
+16) Roadmap (optional)
+17) License/Contributing (basic)
+
+DEPLOYMENT CONSTRAINTS (IMPORTANT)
+- If the current backend is Express, Vercel needs either:
+  A) Convert to Next.js API routes (serverless)
+  B) Host backend separately (Render/Railway/Fly.io) and point frontend to it
+- The README must propose the best option based on the repo (do not assume).
+- Mention CORS config if frontend/backend split.
+
+OUTPUT
+Return only the full README.md content in Markdown, ready to commit.
+Do not output code changes—only documentation.
