@@ -3,6 +3,7 @@ import { Link } from "wouter";
 import * as XLSX from "xlsx";
 import { Sidebar } from "@/components/Sidebar";
 import { Header } from "@/components/Header";
+import { MultiSelect } from "@/components/MultiSelect";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -68,11 +69,51 @@ export default function Leaves() {
   const [form, setForm] = useState({
     type: "official",
     scope: "all",
-    scopeValue: "",
+    scopeValues: [] as string[],
     startDate: "",
     endDate: "",
     note: "",
   });
+
+  const sectorOptions = useMemo(
+    () => Array.from(new Set((employees || []).map((e: any) => e.sector).filter(Boolean)))
+      .sort((a: string, b: string) => a.localeCompare(b, "ar"))
+      .map((v: string) => ({ value: v })),
+    [employees]
+  );
+  const departmentOptions = useMemo(
+    () => Array.from(new Set((employees || []).map((e: any) => e.department).filter(Boolean)))
+      .sort((a: string, b: string) => a.localeCompare(b, "ar"))
+      .map((v: string) => ({ value: v })),
+    [employees]
+  );
+  const sectionOptions = useMemo(
+    () => Array.from(new Set((employees || []).map((e: any) => e.section).filter(Boolean)))
+      .sort((a: string, b: string) => a.localeCompare(b, "ar"))
+      .map((v: string) => ({ value: v })),
+    [employees]
+  );
+  const branchOptions = useMemo(
+    () => Array.from(new Set((employees || []).map((e: any) => e.branch).filter(Boolean)))
+      .sort((a: string, b: string) => a.localeCompare(b, "ar"))
+      .map((v: string) => ({ value: v })),
+    [employees]
+  );
+  const employeeOptions = useMemo(
+    () => (employees || [])
+      .map((e: any) => ({ value: String(e.code), label: `${e.code} - ${e.nameAr || e.name || ""}`.trim() }))
+      .sort((a: any, b: any) => a.value.localeCompare(b.value, "ar")),
+    [employees]
+  );
+
+  const scopeOptions = useMemo(() => {
+    if (form.scope === "sector") return sectorOptions;
+    if (form.scope === "department") return departmentOptions;
+    if (form.scope === "section") return sectionOptions;
+    if (form.scope === "branch") return branchOptions;
+    if (form.scope === "emp") return employeeOptions;
+    return [];
+  }, [form.scope, sectorOptions, departmentOptions, sectionOptions, branchOptions, employeeOptions]);
 
   const rows = useMemo(() => leaves || [], [leaves]);
   const holidayRecordMap = useMemo(() => {
@@ -91,20 +132,20 @@ export default function Leaves() {
       toast({ title: "خطأ", description: "يرجى تحديد الفترة", variant: "destructive" });
       return;
     }
-    if (form.scope !== "all" && !form.scopeValue) {
+    if (form.scope !== "all" && form.scopeValues.length === 0) {
       toast({ title: "خطأ", description: "يرجى تحديد قيمة النطاق", variant: "destructive" });
       return;
     }
     await createLeave.mutateAsync({
       type: form.type,
       scope: form.scope,
-      scopeValue: form.scope === "all" ? null : form.scopeValue,
+      scopeValue: form.scope === "all" ? null : form.scopeValues.join(","),
       startDate: form.startDate,
       endDate: form.endDate,
       note: form.note || null,
     });
     toast({ title: "تم الحفظ", description: "تم إضافة الإجازة" });
-    setForm((prev) => ({ ...prev, scopeValue: "", note: "" }));
+    setForm((prev) => ({ ...prev, scopeValues: [], note: "" }));
   };
 
   const handleExport = () => {
@@ -468,7 +509,16 @@ export default function Leaves() {
                   <SelectItem value="collections">اجازات التحصيل</SelectItem>
                 </SelectContent>
               </Select>
-              <Select value={form.scope} onValueChange={(value) => setForm((prev) => ({ ...prev, scope: value }))}>
+              <Select
+                value={form.scope}
+                onValueChange={(value) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    scope: value,
+                    scopeValues: [],
+                  }))
+                }
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="النطاق" />
                 </SelectTrigger>
@@ -481,12 +531,27 @@ export default function Leaves() {
                   <SelectItem value="emp">موظف</SelectItem>
                 </SelectContent>
               </Select>
-              <Input
-                placeholder="قيمة النطاق"
-                value={form.scopeValue}
-                onChange={(e) => setForm((prev) => ({ ...prev, scopeValue: e.target.value }))}
-                disabled={form.scope === "all"}
-              />
+
+              {form.scope === "all" ? (
+                <Input placeholder="قيمة النطاق" value={""} disabled />
+              ) : (
+                <MultiSelect
+                  options={scopeOptions}
+                  value={form.scopeValues}
+                  onChange={(next) => setForm((prev) => ({ ...prev, scopeValues: next }))}
+                  placeholder={
+                    form.scope === "sector"
+                      ? "اختر قطاع/قطاعات"
+                      : form.scope === "department"
+                        ? "اختر إدارة/إدارات"
+                        : form.scope === "section"
+                          ? "اختر قسم/أقسام"
+                          : form.scope === "branch"
+                            ? "اختر فرع/فروع"
+                            : "اختر موظف/موظفين"
+                  }
+                />
+              )}
               <Input
                 type="date"
                 value={form.startDate}

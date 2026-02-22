@@ -546,13 +546,28 @@ export const processAttendanceRecords = ({
       shiftTimeUTC.setTime(shiftTimeUTC.getTime() + offsetMinutes * 60 * 1000);
       return shiftTimeUTC;
     };
+    const splitScopeValues = (raw: string | null | undefined) => {
+      if (!raw) return [] as string[];
+      return raw
+        .split(/[,،;]/g)
+        .map((v) => v.trim())
+        .filter(Boolean);
+    };
+
     const matchesScope = (scope: string, value: string | null | undefined) => {
       if (scope === "all") return true;
-      if (scope === "sector") return value === employee.sector;
-      if (scope === "department") return value === employee.department;
-      if (scope === "section") return value === employee.section;
-      if (scope === "branch") return value === employee.branch;
-      if (scope === "emp") return value === employee.code;
+      const values = splitScopeValues(value);
+      const matchAny = (target: string | null | undefined) => {
+        if (!target) return false;
+        if (values.length === 0) return false;
+        return values.includes(String(target));
+      };
+
+      if (scope === "sector") return matchAny(employee.sector);
+      if (scope === "department") return matchAny(employee.department);
+      if (scope === "section") return matchAny(employee.section);
+      if (scope === "branch") return matchAny(employee.branch);
+      if (scope === "emp") return matchAny(employee.code);
       return false;
     };
     const appliesLeave = (leave: Leave, dateStr: string) => {
