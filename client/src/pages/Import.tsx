@@ -200,7 +200,21 @@ export default function Import() {
 
         const mappedPreview = allRows.map((row, idx) => {
           const code = normalizeEmployeeCode(getImportCell(row, ["الكود", "كود", "Code", "ID", "EmpCode", "Employee Code"])) || "";
-          const rawDate = getImportCell(row, ["التاريخ", "Date", "PunchDate", "DateTime", "Timestamp", "الوقت", "Punch Time"]);
+          const rawDate = getImportCell(row, [
+            // Arabic headers
+            "التاريخ_والوقت",
+            "التاريخ والوقت",
+            "التاريخ",
+            "الوقت",
+            // Common English headers
+            "DateTime",
+            "Timestamp",
+            "PunchDate",
+            "Punch Time",
+            "PunchDateTime",
+            "Punch DateTime",
+            "Date",
+          ]);
           const parsed = parsePunchDate(rawDate);
           if (!code) {
             rejected += 1;
